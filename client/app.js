@@ -101,7 +101,9 @@
 
   // --- Helpers ---
   function getGasUrl() {
-    return (localStorage.getItem(STORAGE_KEYS.GAS_URL) || DEFAULT_GAS_URL || '').trim();
+    const stored = localStorage.getItem(STORAGE_KEYS.GAS_URL);
+    if (stored === '__LOCAL__') return '';
+    return (stored || DEFAULT_GAS_URL || '').trim();
   }
 
   function updateConnectionUI() {
@@ -151,7 +153,7 @@
   }
 
   function escapeHtml(str) {
-    return String(str || '')
+    return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
@@ -613,7 +615,7 @@
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const dd = String(now.getDate()).padStart(2, '0');
     document.getElementById('f-booking-date').value = `${yyyy}-${mm}-${dd}`;
-    document.getElementById('f-sig-date').value = `${mm}/${dd}/${yyyy}`;
+    document.getElementById('f-sig-date').value = `${yyyy}-${mm}-${dd}`;
     document.getElementById('f-printer').value = 'Bambulab A1';
     document.getElementById('f-filament-type').value = 'PETG';
     if (!document.getElementById('f-filament-color').value.trim()) {
@@ -623,6 +625,7 @@
       const yesRadio = el.bookingForm.querySelector(`input[name="${name}"][value="Yes"]`);
       if (yesRadio) yesRadio.checked = true;
     });
+    updateStepProgress();
   }
 
   // --- Portal Navigation ---
@@ -654,6 +657,10 @@
       showAlert(el.bookingAlert, 'Invalid file type. Only .STL or .3MF files are allowed.');
       return;
     }
+    if (file.size === 0) {
+      showAlert(el.bookingAlert, 'Selected file is empty (0 bytes). Please choose a valid .STL or .3MF file.');
+      return;
+    }
     if (file.size > 20 * 1024 * 1024) {
       showAlert(el.bookingAlert, 'File exceeds the 20 MB limit.');
       return;
@@ -675,12 +682,16 @@
       el.dropzoneEmpty.classList.add('hidden');
       el.dropzoneFilled.classList.remove('hidden');
 
+      const inlineCard = document.getElementById('stl-inline-estimator');
+      const note3mf = document.getElementById('inline-3mf-note');
       if (ext === 'stl' && typeof analyzeInlineSTLFile === 'function') {
+        if (note3mf) note3mf.classList.add('hidden');
         analyzeInlineSTLFile(file);
       } else {
-        const inlineCard = document.getElementById('stl-inline-estimator');
         if (inlineCard) inlineCard.classList.add('hidden');
+        if (note3mf) note3mf.classList.toggle('hidden', ext !== '3mf');
       }
+      updateStepProgress();
     };
     reader.readAsDataURL(file);
   }
@@ -692,15 +703,19 @@
     el.dropzoneEmpty.classList.remove('hidden');
     el.dropzoneFilled.classList.add('hidden');
     const inlineCard = document.getElementById('stl-inline-estimator');
+    const note3mf = document.getElementById('inline-3mf-note');
     if (inlineCard) inlineCard.classList.add('hidden');
+    if (note3mf) note3mf.classList.add('hidden');
+    updateStepProgress();
   }
 
   el.dropzone.addEventListener('click', (e) => {
-    if (e.target === el.btnRemoveFile) return;
+    if (e.target === el.btnRemoveFile || e.target.closest('button')) return;
     el.fileInput.click();
   });
 
   el.dropzone.addEventListener('keydown', (e) => {
+    if (e.target === el.btnRemoveFile || e.target.closest('button')) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       el.fileInput.click();
@@ -754,12 +769,15 @@
     showToast('Missing Field', msg);
   }
 
-  el.bookingForm.addEventListener('input', (e) => {
+  function handleFieldClear(e) {
     if (e.target && e.target.classList) e.target.classList.remove('field-error');
-  });
-  el.bookingForm.addEventListener('change', (e) => {
-    if (e.target && e.target.classList) e.target.classList.remove('field-error');
-  });
+    const parentErr = e.target?.closest('.field-error');
+    if (parentErr) parentErr.classList.remove('field-error');
+    updateStepProgress();
+  }
+
+  el.bookingForm.addEventListener('input', handleFieldClear);
+  el.bookingForm.addEventListener('change', handleFieldClear);
 
   // --- Booking Submission ---
   el.bookingForm.addEventListener('submit', async (e) => {
@@ -941,9 +959,12 @@
         : `<span class="badge badge-unpaid">Unpaid</span>`;
 
       const hasWeight = b.estimatedWeightGrams !== '' && b.estimatedWeightGrams !== null && b.estimatedWeightGrams !== undefined;
-      const hasDur = (b.estimatedHours !== '' && b.estimatedHours !== undefined) || (b.estimatedMinutes !== '' && b.estimatedMinutes !== undefined);
+      const hasDur = (b.estimatedHours !== '' && b.estimatedHours !== null && b.estimatedHours !== undefined) || (b.estimatedMinutes !== '' && b.estimatedMinutes !== null && b.estimatedMinutes !== undefined);
+      const weightStr = hasWeight ? `${escapeHtml(b.estimatedWeightGrams)}g` : '—g';
+      const durStr = hasDur ? `${escapeHtml(b.estimatedHours === '' || b.estimatedHours == null ? 0 : b.estimatedHours)}h ${escapeHtml(b.estimatedMinutes === '' || b.estimatedMinutes == null ? 0 : b.estimatedMinutes)}m` : '—';
+      const supStr = b.supportRequired ? escapeHtml(b.supportRequired) : '—';
       const specsText = hasWeight || hasDur || b.supportRequired
-        ? `${hasWeight ? b.estimatedWeightGrams + 'g' : '—g'} · ${hasDur ? (b.estimatedHours || 0) + 'h ' + (b.estimatedMinutes || 0) + 'm' : '—'} · Supports: ${b.supportRequired || '—'}`
+        ? `${weightStr} · ${durStr} · Supports: ${supStr}`
         : 'Weight, duration &amp; supports: Pending Admin Review';
 
       const notesHtml = b.adminNotes
@@ -951,7 +972,7 @@
         : '';
 
       const gcashHint = (hasPrice && b.paymentStatus !== 'Paid')
-        ? `<div class="bk-gcash-hint">GCash: <strong>09158589344</strong><br/>Philip Marion Martin</div>`
+        ? `<div class="bk-gcash-hint"><div>GCash: <strong>09158589344</strong><br/>Philip Marion Martin</div><button type="button" class="btn-copy-gcash" data-gcash="09158589344">Copy GCash</button></div>`
         : '';
 
       return `
@@ -1000,23 +1021,35 @@
       }
       localStorage.setItem(STORAGE_KEYS.GAS_URL, val);
     } else {
-      localStorage.removeItem(STORAGE_KEYS.GAS_URL);
+      localStorage.setItem(STORAGE_KEYS.GAS_URL, '__LOCAL__');
     }
     updateConnectionUI();
     el.settingsModal.classList.add('hidden');
   });
 
   el.btnClearGas.addEventListener('click', () => {
-    localStorage.removeItem(STORAGE_KEYS.GAS_URL);
+    localStorage.setItem(STORAGE_KEYS.GAS_URL, '__LOCAL__');
     el.inputGasUrl.value = '';
     updateConnectionUI();
     el.settingsModal.classList.add('hidden');
+    showToast('Local Preview Mode', 'Switched to browser Local Preview storage.');
   });
 
   el.btnCloseSuccess.addEventListener('click', () => el.successModal.classList.add('hidden'));
   el.btnViewMyBookings.addEventListener('click', () => {
     el.successModal.classList.add('hidden');
     switchPortalView('history');
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!el.settingsModal.classList.contains('hidden')) {
+      el.settingsModal.classList.add('hidden');
+    } else if (!el.successModal.classList.contains('hidden')) {
+      el.successModal.classList.add('hidden');
+    } else if (!el.notifDropdown.classList.contains('hidden')) {
+      el.notifDropdown.classList.add('hidden');
+    }
   });
 
   // --- Client-side STL Parser (Binary & ASCII) & Integrated Print Cost ---
@@ -1106,6 +1139,7 @@
       if (!parsed || parsed.volumeCm3 <= 0) {
         inlineParsedSTL = null;
         if (inlineCard) inlineCard.classList.add('hidden');
+        showAlert(el.bookingAlert, 'Could not parse STL geometry (corrupt or empty mesh). Please verify or re-export your .STL file.');
         return;
       }
       inlineParsedSTL = { name: file.name, volumeCm3: parsed.volumeCm3, dims: parsed.dims };
@@ -1156,6 +1190,85 @@
     const node = document.getElementById(id);
     if (node) node.addEventListener('change', updateInlineSTLEstimate);
   });
+
+  // --- One-Tap Copy GCash ---
+  async function copyTextToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        // Fallback below
+      }
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    ta.remove();
+    return ok;
+  }
+
+  document.addEventListener('click', async (e) => {
+    const copyBtn = e.target.closest('.btn-copy-gcash');
+    if (!copyBtn) return;
+    const gcashNum = copyBtn.dataset.gcash || '09158589344';
+    await copyTextToClipboard(gcashNum);
+    showToast('GCash Copied', `${gcashNum} (Philip Marion Martin) copied to clipboard.`);
+  });
+
+  // --- 5-Step Progress Indicator ---
+  function updateStepProgress() {
+    const nav = document.getElementById('step-progress');
+    if (!nav) return;
+
+    const sec1Done = Boolean(
+      document.getElementById('f-grade-section')?.value.trim() &&
+      document.getElementById('f-phone')?.value.trim() &&
+      document.getElementById('f-booking-date')?.value
+    );
+    const sec2Done = Boolean(selectedFile);
+    const sec3Done = ['chk_format', 'chk_bedVolume', 'chk_orientation', 'chk_slicer', 'chk_bedClean']
+      .every((name) => Boolean(el.bookingForm?.querySelector(`input[name="${name}"]:checked`)));
+    const sec4Done = Boolean(
+      document.getElementById('f-filament-color')?.value.trim() &&
+      document.getElementById('f-purpose')?.value.trim()
+    );
+    const sec5Done = Boolean(
+      document.getElementById('f-agree-rules')?.checked &&
+      document.getElementById('f-sig-name')?.value.trim() &&
+      document.getElementById('f-sig-date')?.value
+    );
+
+    const doneMap = { 1: sec1Done, 2: sec2Done, 3: sec3Done, 4: sec4Done, 5: sec5Done };
+    nav.querySelectorAll('.step-pill').forEach((pill) => {
+      const step = Number(pill.dataset.step);
+      pill.classList.toggle('done', Boolean(doneMap[step]));
+    });
+  }
+
+  const stepProgressEl = document.getElementById('step-progress');
+  if (stepProgressEl) {
+    stepProgressEl.addEventListener('click', (e) => {
+      const pill = e.target.closest('.step-pill');
+      if (!pill) return;
+      stepProgressEl.querySelectorAll('.step-pill').forEach((p) => p.classList.remove('active'));
+      pill.classList.add('active');
+      const target = document.getElementById(pill.dataset.target);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  }
 
   // --- Init ---
   updateConnectionUI();

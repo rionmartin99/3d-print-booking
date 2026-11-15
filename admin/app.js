@@ -11,12 +11,14 @@
   };
 
   let adminPasscode = '';
+  let deferredInstallPrompt = null;
   let allBookings = [];
   let activeBookingId = null;
 
   const el = {
     connDot: document.getElementById('conn-dot'),
     connLabel: document.getElementById('conn-label'),
+    btnInstallApp: document.getElementById('btn-install-app'),
     btnBackendSettings: document.getElementById('btn-backend-settings'),
     btnLogout: document.getElementById('btn-logout'),
 
@@ -25,6 +27,7 @@
     authAlert: document.getElementById('admin-auth-alert'),
     loginForm: document.getElementById('admin-login-form'),
     passcodeInput: document.getElementById('admin-passcode'),
+    btnTogglePasscode: document.getElementById('btn-toggle-passcode'),
 
     btnRefresh: document.getElementById('btn-refresh-queue'),
     statTotal: document.getElementById('stat-total'),
@@ -32,10 +35,13 @@
     statActive: document.getElementById('stat-active'),
     statUnpaid: document.getElementById('stat-unpaid'),
 
+    statusChips: document.getElementById('status-chips'),
     filterSearch: document.getElementById('filter-search'),
     filterStatus: document.getElementById('filter-status'),
     filterPayment: document.getElementById('filter-payment'),
+    queueLoading: document.getElementById('queue-loading'),
     queueTbody: document.getElementById('queue-tbody'),
+    queueCards: document.getElementById('queue-cards'),
 
     inspectorModal: document.getElementById('inspector-modal'),
     btnCloseInspector: document.getElementById('btn-close-inspector'),
@@ -47,11 +53,14 @@
     inputGasUrl: document.getElementById('input-gas-url'),
     btnCloseSettings: document.getElementById('btn-close-settings'),
     btnSaveGas: document.getElementById('btn-save-gas'),
-    btnClearGas: document.getElementById('btn-clear-gas')
+    btnClearGas: document.getElementById('btn-clear-gas'),
+
+    toastContainer: document.getElementById('toast-container')
   };
 
   function getGasUrl() {
-    return (localStorage.getItem(STORAGE_KEYS.GAS_URL) || DEFAULT_GAS_URL || '').trim();
+    const stored = localStorage.getItem(STORAGE_KEYS.GAS_URL);
+    return (stored !== null ? stored : DEFAULT_GAS_URL || '').trim();
   }
 
   function updateConnectionUI() {
@@ -66,13 +75,27 @@
   }
 
   function showAlert(target, msg, type = 'error') {
+    if (!target) return;
     target.textContent = msg;
     target.className = `alert alert-${type}`;
     target.classList.remove('hidden');
   }
 
   function hideAlert(target) {
+    if (!target) return;
     target.classList.add('hidden');
+  }
+
+  function showToast(message, type = 'info') {
+    if (!el.toastContainer) return;
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', 'status');
+    toast.textContent = message;
+    el.toastContainer.appendChild(toast);
+    setTimeout(() => {
+      toast.remove();
+    }, 3600);
   }
 
   function formatCurrency(val) {
@@ -90,7 +113,7 @@
   }
 
   function escapeHtml(str) {
-    return String(str || '')
+    return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
@@ -164,6 +187,16 @@
   }
 
   // --- Auth ---
+  if (el.btnTogglePasscode && el.passcodeInput) {
+    el.btnTogglePasscode.addEventListener('click', () => {
+      const isHidden = el.passcodeInput.type === 'password';
+      el.passcodeInput.type = isHidden ? 'text' : 'password';
+      el.btnTogglePasscode.textContent = isHidden ? 'Hide' : 'Show';
+      el.btnTogglePasscode.setAttribute('aria-pressed', String(isHidden));
+      el.btnTogglePasscode.setAttribute('aria-label', isHidden ? 'Hide passcode' : 'Show passcode');
+    });
+  }
+
   el.loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     hideAlert(el.authAlert);
@@ -201,6 +234,11 @@
     el.btnLogout.classList.add('hidden');
     el.authSection.classList.remove('hidden');
     el.loginForm.reset();
+    if (el.passcodeInput && el.btnTogglePasscode) {
+      el.passcodeInput.type = 'password';
+      el.btnTogglePasscode.textContent = 'Show';
+      el.btnTogglePasscode.setAttribute('aria-pressed', 'false');
+    }
   });
 
   function enterWorkspace() {
@@ -211,15 +249,39 @@
   }
 
   // --- Queue & Metrics ---
+  function setQueueLoading(isLoading) {
+    if (el.queueLoading) {
+      el.queueLoading.classList.toggle('hidden', !isLoading);
+    }
+    if (el.btnRefresh) {
+      el.btnRefresh.disabled = isLoading;
+      el.btnRefresh.textContent = isLoading ? 'Refreshing...' : 'Refresh Queue';
+    }
+    if (el.queueTbody && isLoading && !allBookings.length) {
+      el.queueTbody.innerHTML = '';
+    }
+    if (el.queueCards && isLoading && !allBookings.length) {
+      el.queueCards.innerHTML = '';
+    }
+  }
+
   async function loadQueue() {
+    setQueueLoading(true);
     try {
       const res = await apiCall('adminGetBookings');
-      if (!res.ok) return;
+      if (!res.ok) {
+        showToast(res.error || 'Failed to load print queue.', 'error');
+        return;
+      }
       allBookings = res.bookings || [];
       updateMetrics();
+      renderStatusChips();
       renderTable();
     } catch (err) {
       console.error(err);
+      showToast(err.message || 'Failed to load print queue.', 'error');
+    } finally {
+      setQueueLoading(false);
     }
   }
 
@@ -232,6 +294,67 @@
       .filter(b => b.paymentStatus !== 'Paid' && b.priceToPay !== null && !isNaN(b.priceToPay))
       .reduce((acc, b) => acc + Number(b.priceToPay), 0);
     el.statUnpaid.textContent = formatCurrency(unpaidSum);
+  }
+
+  function renderStatusChips() {
+    if (!el.statusChips) return;
+    const statusVal = el.filterStatus.value;
+    const payVal = el.filterPayment.value;
+
+    const chips = [
+      { label: 'All', type: 'all', value: 'ALL', count: allBookings.length },
+      { label: 'Pending Review', type: 'status', value: 'Pending Review', count: allBookings.filter(b => b.jobStatus === 'Pending Review').length },
+      { label: 'Approved', type: 'status', value: 'Approved', count: allBookings.filter(b => b.jobStatus === 'Approved').length },
+      { label: 'Printing', type: 'status', value: 'Printing', count: allBookings.filter(b => b.jobStatus === 'Printing').length },
+      { label: 'Ready for Pickup', type: 'status', value: 'Ready for Pickup', count: allBookings.filter(b => b.jobStatus === 'Ready for Pickup').length },
+      { label: 'Unpaid', type: 'payment', value: 'Unpaid', count: allBookings.filter(b => b.paymentStatus !== 'Paid').length },
+      { label: 'Completed', type: 'status', value: 'Completed', count: allBookings.filter(b => b.jobStatus === 'Completed').length }
+    ];
+
+    el.statusChips.innerHTML = chips.map(chip => {
+      let isActive = false;
+      if (chip.type === 'all') {
+        isActive = statusVal === 'ALL' && payVal === 'ALL';
+      } else if (chip.type === 'payment') {
+        isActive = payVal === chip.value && statusVal === 'ALL';
+      } else {
+        isActive = statusVal === chip.value && payVal === 'ALL';
+      }
+      return `
+        <button
+          type="button"
+          class="status-chip${isActive ? ' active' : ''}"
+          role="tab"
+          aria-selected="${isActive}"
+          data-chip-type="${chip.type}"
+          data-chip-value="${escapeHtml(chip.value)}"
+        >
+          <span>${escapeHtml(chip.label)}</span>
+          <span class="chip-count">${chip.count}</span>
+        </button>
+      `;
+    }).join('');
+  }
+
+  if (el.statusChips) {
+    el.statusChips.addEventListener('click', (e) => {
+      const btn = e.target.closest('.status-chip');
+      if (!btn) return;
+      const type = btn.dataset.chipType;
+      const val = btn.dataset.chipValue;
+      if (type === 'all') {
+        el.filterStatus.value = 'ALL';
+        el.filterPayment.value = 'ALL';
+      } else if (type === 'payment') {
+        el.filterStatus.value = 'ALL';
+        el.filterPayment.value = val;
+      } else {
+        el.filterStatus.value = val;
+        el.filterPayment.value = 'ALL';
+      }
+      renderStatusChips();
+      renderTable();
+    });
   }
 
   function statusBadgeClass(status) {
@@ -271,6 +394,11 @@
           </td>
         </tr>
       `;
+      if (el.queueCards) {
+        el.queueCards.innerHTML = `
+          <div class="empty-state">No matching print bookings found.</div>
+        `;
+      }
       return;
     }
 
@@ -280,6 +408,10 @@
       const payBadge = b.paymentStatus === 'Paid'
         ? '<span class="badge badge-paid">Paid</span>'
         : '<span class="badge badge-unpaid">Unpaid</span>';
+
+      const weightText = (b.estimatedWeightGrams === '' || b.estimatedWeightGrams == null)
+        ? '—'
+        : `${escapeHtml(b.estimatedWeightGrams)}g`;
 
       return `
         <tr>
@@ -297,7 +429,7 @@
           </td>
           <td>
             <div class="cell-main">${escapeHtml(b.printerAssigned)}</div>
-            <div class="cell-sub">${escapeHtml(b.filamentType)} (${escapeHtml(b.filamentColor)}) · ${escapeHtml(b.estimatedWeightGrams)}g</div>
+            <div class="cell-sub">${escapeHtml(b.filamentType)} (${escapeHtml(b.filamentColor)}) · ${weightText}</div>
           </td>
           <td>
             <span class="badge ${statusBadgeClass(b.jobStatus)}">${escapeHtml(b.jobStatus)}</span>
@@ -315,22 +447,72 @@
         </tr>
       `;
     }).join('');
+
+    if (el.queueCards) {
+      el.queueCards.innerHTML = rows.map(b => {
+        const hasPrice = b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay);
+        const priceText = hasPrice ? formatCurrency(b.priceToPay) : 'Not Set';
+        const payBadge = b.paymentStatus === 'Paid'
+          ? '<span class="badge badge-paid">Paid</span>'
+          : '<span class="badge badge-unpaid">Unpaid</span>';
+
+        const weightText = (b.estimatedWeightGrams === '' || b.estimatedWeightGrams == null)
+          ? '—'
+          : `${escapeHtml(b.estimatedWeightGrams)}g`;
+
+        return `
+          <article class="queue-card">
+            <div class="qc-head">
+              <div>
+                <div class="qc-id mono">${escapeHtml(b.bookingId)}</div>
+                <div class="qc-date">${escapeHtml(b.bookingDate)}</div>
+              </div>
+              <span class="badge ${statusBadgeClass(b.jobStatus)}">${escapeHtml(b.jobStatus)}</span>
+            </div>
+            <div class="qc-body">
+              <div class="qc-student">${escapeHtml(b.fullName)}</div>
+              <div class="qc-meta">${escapeHtml(b.gradeSection || '—')} · ${escapeHtml(b.phone || '—')}</div>
+              <div class="qc-meta">${escapeHtml(b.printerAssigned)} · ${escapeHtml(b.filamentType)} (${escapeHtml(b.filamentColor)}) · ${weightText}</div>
+              <div class="qc-file mono">${escapeHtml(b.fileName)} (${formatBytes(b.fileSizeBytes)})</div>
+            </div>
+            <div class="qc-foot">
+              <div class="qc-price mono">${priceText} ${payBadge}</div>
+            </div>
+            <div class="qc-actions">
+              <button type="button" class="btn btn-secondary btn-sm btn-dl" data-id="${escapeHtml(b.bookingId)}">Download</button>
+              <button type="button" class="btn btn-primary btn-sm btn-manage" data-id="${escapeHtml(b.bookingId)}">Manage</button>
+            </div>
+          </article>
+        `;
+      }).join('');
+    }
   }
 
-  el.filterSearch.addEventListener('input', renderTable);
-  el.filterStatus.addEventListener('change', renderTable);
-  el.filterPayment.addEventListener('change', renderTable);
-  el.btnRefresh.addEventListener('click', loadQueue);
-
-  el.queueTbody.addEventListener('click', (e) => {
+  function handleQueueActionClick(e) {
     const dlBtn = e.target.closest('.btn-dl');
     const mgBtn = e.target.closest('.btn-manage');
     if (dlBtn) {
-      downloadBookingFile(dlBtn.dataset.id);
+      downloadBookingFile(dlBtn.dataset.id, dlBtn);
     } else if (mgBtn) {
       openInspector(mgBtn.dataset.id);
     }
+  }
+
+  el.filterSearch.addEventListener('input', renderTable);
+  el.filterStatus.addEventListener('change', () => {
+    renderStatusChips();
+    renderTable();
   });
+  el.filterPayment.addEventListener('change', () => {
+    renderStatusChips();
+    renderTable();
+  });
+  el.btnRefresh.addEventListener('click', loadQueue);
+
+  el.queueTbody.addEventListener('click', handleQueueActionClick);
+  if (el.queueCards) {
+    el.queueCards.addEventListener('click', handleQueueActionClick);
+  }
 
   // --- STL File Download ---
   function triggerBase64Download(base64, fileName) {
@@ -350,33 +532,51 @@
     URL.revokeObjectURL(url);
   }
 
-  async function downloadBookingFile(bookingId) {
+  async function downloadBookingFile(bookingId, triggerBtn) {
     const b = allBookings.find(item => item.bookingId === bookingId);
     if (!b) return;
 
-    if (b.localFileBase64) {
-      triggerBase64Download(b.localFileBase64, b.fileName || `${b.bookingId}.stl`);
-      return;
+    const originalLabel = triggerBtn ? triggerBtn.textContent : '';
+    if (triggerBtn) {
+      triggerBtn.disabled = true;
+      triggerBtn.textContent = 'Downloading...';
     }
 
-    if (b.driveFileId && getGasUrl()) {
-      try {
-        const res = await apiCall('adminDownloadFile', { fileId: b.driveFileId });
-        if (res.ok && res.base64) {
-          triggerBase64Download(res.base64, b.fileName || res.fileName || `${b.bookingId}.stl`);
-          return;
+    try {
+      if (b.localFileBase64) {
+        const name = b.fileName || `${b.bookingId}.stl`;
+        triggerBase64Download(b.localFileBase64, name);
+        showToast(`Downloading ${name}...`, 'success');
+        return;
+      }
+
+      if (b.driveFileId && getGasUrl()) {
+        try {
+          const res = await apiCall('adminDownloadFile', { fileId: b.driveFileId });
+          if (res.ok && res.base64) {
+            const name = b.fileName || res.fileName || `${b.bookingId}.stl`;
+            triggerBase64Download(res.base64, name);
+            showToast(`Downloading ${name}...`, 'success');
+            return;
+          }
+        } catch (err) {
+          console.error(err);
         }
-      } catch (err) {
-        console.error(err);
+      }
+
+      if (b.downloadUrl) {
+        window.open(b.downloadUrl, '_blank', 'noopener');
+        showToast('Opened file download link.', 'info');
+        return;
+      }
+
+      showToast('No downloadable file found for this booking.', 'error');
+    } finally {
+      if (triggerBtn) {
+        triggerBtn.disabled = false;
+        triggerBtn.textContent = originalLabel;
       }
     }
-
-    if (b.downloadUrl) {
-      window.open(b.downloadUrl, '_blank', 'noopener');
-      return;
-    }
-
-    alert('No downloadable file found for this booking.');
   }
 
   // --- Job Inspector Modal ---
@@ -441,6 +641,15 @@
     el.inspectorModal.classList.remove('hidden');
   }
 
+  function closeInspector() {
+    el.inspectorModal.classList.add('hidden');
+    activeBookingId = null;
+  }
+
+  function closeSettings() {
+    el.settingsModal.classList.add('hidden');
+  }
+
   function computeAdminEstimate() {
     const weight = parseFloat(document.getElementById('edit-weight')?.value) || 0;
     const tier = document.getElementById('admin-est-tier')?.value || 'student_pla';
@@ -468,16 +677,17 @@
     btnApplyEst.addEventListener('click', () => {
       const total = computeAdminEstimate();
       document.getElementById('edit-price').value = total;
+      showToast(`Applied ₱${total.toLocaleString('en-PH')} to Amount to Pay.`, 'info');
     });
   }
 
-  el.btnCloseInspector.addEventListener('click', () => {
-    el.inspectorModal.classList.add('hidden');
-    activeBookingId = null;
+  el.btnCloseInspector.addEventListener('click', closeInspector);
+  el.inspectorModal.addEventListener('click', (e) => {
+    if (e.target === el.inspectorModal) closeInspector();
   });
 
   el.btnInspDownload.addEventListener('click', () => {
-    if (activeBookingId) downloadBookingFile(activeBookingId);
+    if (activeBookingId) downloadBookingFile(activeBookingId, el.btnInspDownload);
   });
 
   el.inspectorForm.addEventListener('submit', async (e) => {
@@ -512,7 +722,9 @@
       if (!res.ok) {
         showAlert(el.inspAlert, res.error || 'Failed to save changes.');
       } else {
-        showAlert(el.inspAlert, 'Saved! Student portal will now show the updated fee and status.', 'success');
+        const msg = 'Saved! Student portal will now show the updated fee and status.';
+        showAlert(el.inspAlert, msg, 'success');
+        showToast(msg, 'success');
         await loadQueue();
       }
     } catch (err) {
@@ -529,23 +741,43 @@
     el.settingsModal.classList.remove('hidden');
   });
 
-  el.btnCloseSettings.addEventListener('click', () => el.settingsModal.classList.add('hidden'));
+  el.btnCloseSettings.addEventListener('click', closeSettings);
+  el.settingsModal.addEventListener('click', (e) => {
+    if (e.target === el.settingsModal) closeSettings();
+  });
+
+  el.inputGasUrl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      el.btnSaveGas.click();
+    }
+  });
 
   el.btnSaveGas.addEventListener('click', () => {
     const val = el.inputGasUrl.value.trim();
-    if (val) localStorage.setItem(STORAGE_KEYS.GAS_URL, val);
-    else localStorage.removeItem(STORAGE_KEYS.GAS_URL);
+    localStorage.setItem(STORAGE_KEYS.GAS_URL, val);
     updateConnectionUI();
-    el.settingsModal.classList.add('hidden');
+    closeSettings();
+    showToast(val ? 'Google Apps Script URL saved.' : 'Switched to Local Preview Mode.', 'success');
     if (adminPasscode) loadQueue();
   });
 
   el.btnClearGas.addEventListener('click', () => {
-    localStorage.removeItem(STORAGE_KEYS.GAS_URL);
+    localStorage.setItem(STORAGE_KEYS.GAS_URL, '');
     el.inputGasUrl.value = '';
     updateConnectionUI();
-    el.settingsModal.classList.add('hidden');
+    closeSettings();
+    showToast('Switched to Local Preview Mode.', 'info');
     if (adminPasscode) loadQueue();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!el.inspectorModal.classList.contains('hidden')) {
+      closeInspector();
+    } else if (!el.settingsModal.classList.contains('hidden')) {
+      closeSettings();
+    }
   });
 
   // --- PWA Registration & Install ---
@@ -556,16 +788,20 @@
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
-    el.btnInstallApp.classList.remove('hidden');
+    if (el.btnInstallApp) {
+      el.btnInstallApp.classList.remove('hidden');
+    }
   });
 
-  el.btnInstallApp.addEventListener('click', async () => {
-    if (!deferredInstallPrompt) return;
-    deferredInstallPrompt.prompt();
-    await deferredInstallPrompt.userChoice;
-    deferredInstallPrompt = null;
-    el.btnInstallApp.classList.add('hidden');
-  });
+  if (el.btnInstallApp) {
+    el.btnInstallApp.addEventListener('click', async () => {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      el.btnInstallApp.classList.add('hidden');
+    });
+  }
 
   // --- Init ---
   updateConnectionUI();

@@ -164,9 +164,27 @@
       <div id="view-booking" class="view-panel">
         <div id="booking-alert" class="alert hidden" role="alert"></div>
 
+        <nav class="step-progress" id="step-progress" aria-label="Booking form sections">
+          <button type="button" class="step-pill active" data-step="1" data-target="sec-1">
+            <span class="step-dot">1</span><span>Info</span>
+          </button>
+          <button type="button" class="step-pill" data-step="2" data-target="sec-2">
+            <span class="step-dot">2</span><span>Model</span>
+          </button>
+          <button type="button" class="step-pill" data-step="3" data-target="sec-3">
+            <span class="step-dot">3</span><span>Pre-Check</span>
+          </button>
+          <button type="button" class="step-pill" data-step="4" data-target="sec-4">
+            <span class="step-dot">4</span><span>Print &amp; Material</span>
+          </button>
+          <button type="button" class="step-pill" data-step="5" data-target="sec-5">
+            <span class="step-dot">5</span><span>Rules &amp; Sign</span>
+          </button>
+        </nav>
+
         <form id="booking-form" class="booking-form" novalidate>
           <!-- 1. STUDENT & CONTACT INFORMATION -->
-          <div class="card form-section">
+          <div class="card form-section" id="sec-1">
             <div class="section-head">
               <span class="section-num">01</span>
               <div>
@@ -196,7 +214,7 @@
           </div>
 
           <!-- STL / 3MF FILE UPLOAD -->
-          <div class="card form-section">
+          <div class="card form-section" id="sec-2">
             <div class="section-head">
               <span class="section-num">02</span>
               <div>
@@ -254,16 +272,34 @@
                   </select>
                 </div>
                 <div class="gcash-inline-box">
+                  <div class="gcash-inline-info">
+                    <span class="gcash-label">Payment via GCash</span>
+                    <strong>09158589344</strong>
+                    <span>Philip Marion Martin</span>
+                  </div>
+                  <button type="button" class="btn-copy-gcash" data-gcash="09158589344">Copy GCash</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="inline-3mf-note" class="inline-3mf-note hidden" role="status">
+              <div class="inline-3mf-head">
+                <span class="inline-3mf-badge">3MF Model Attached</span>
+                <p>Your <code>.3MF</code> file will be sliced and quoted by the Lab Admin after submission. You will receive a notification once your final print fee is ready.</p>
+              </div>
+              <div class="gcash-inline-box">
+                <div class="gcash-inline-info">
                   <span class="gcash-label">Payment via GCash</span>
                   <strong>09158589344</strong>
                   <span>Philip Marion Martin</span>
                 </div>
+                <button type="button" class="btn-copy-gcash" data-gcash="09158589344">Copy GCash</button>
               </div>
             </div>
           </div>
 
           <!-- 2. DESIGN & MODEL PRE-CHECK CHECKLIST -->
-          <div class="card form-section">
+          <div class="card form-section" id="sec-3">
             <div class="section-head">
               <span class="section-num">03</span>
               <div>
@@ -316,7 +352,7 @@
           </div>
 
           <!-- 3. PRINT JOB & MATERIAL DETAILS -->
-          <div class="card form-section">
+          <div class="card form-section" id="sec-4">
             <div class="section-head">
               <span class="section-num">04</span>
               <div>
@@ -354,7 +390,7 @@
               <div class="field">
                 <label>Admin-Assessed Specs</label>
                 <div class="admin-assessed-note">
-                  Estimated weight (g), print duration, and support structure requirements will be filled in by the Lab Admin after slicing. You will receive a notification once ready.
+                  Final weight (g), print duration, and support requirements will be confirmed by the Lab Admin after slicing. You will receive a notification once ready.
                 </div>
               </div>
             </div>
@@ -366,7 +402,7 @@
           </div>
 
           <!-- 5. LAB RULES & STUDENT ACKNOWLEDGMENT -->
-          <div class="card form-section">
+          <div class="card form-section" id="sec-5">
             <div class="section-head">
               <span class="section-num">05</span>
               <div>
@@ -378,7 +414,7 @@
             <ol class="lab-rules">
               <li>I will attend the mandatory setup phase for my print job to verify the first layer adhesion.</li>
               <li>I am responsible for cleaning up the printing area, carefully removing my print, and ensuring the print bed is wiped clean and clear for the next user.</li>
-              <li>I understand that material costs will be calculated based on the estimated weight in grams.</li>
+              <li>I understand that material costs are calculated based on the print weight in grams.</li>
               <li>Unattended long-duration prints must be pre-approved by lab supervisors.</li>
               <li>I take full responsibility for any damage to or loss of lab equipment caused by my use.</li>
             </ol>
@@ -394,8 +430,8 @@
                 <input type="text" id="f-sig-name" placeholder="Type your full name" required />
               </div>
               <div class="field">
-                <label for="f-sig-date">Signature Date (mm/dd/yyyy) <span class="req">*</span></label>
-                <input type="text" id="f-sig-date" placeholder="mm/dd/yyyy" required />
+                <label for="f-sig-date">Signature Date <span class="req">*</span></label>
+                <input type="date" id="f-sig-date" required />
               </div>
             </div>
           </div>
@@ -455,8 +491,11 @@
           <strong id="success-booking-id" class="mono">3DP-000000</strong>
         </div>
         <div class="gcash-modal-box">
-          <strong>Payment via GCash</strong>
-          <div>09158589344 · Philip Marion Martin</div>
+          <div class="gcash-modal-info">
+            <strong>Payment via GCash</strong>
+            <div>09158589344 · Philip Marion Martin</div>
+          </div>
+          <button type="button" class="btn-copy-gcash" data-gcash="09158589344">Copy GCash</button>
         </div>
         <p class="modal-desc">Check <strong>My Bookings &amp; Fees</strong> to view your final print fee and payment status.</p>
       </div>

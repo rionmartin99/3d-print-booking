@@ -60,7 +60,10 @@
         <form id="admin-login-form" class="stack-form" novalidate>
           <div class="field">
             <label for="admin-passcode">Admin Passcode</label>
-            <input type="password" id="admin-passcode" placeholder="Enter admin passcode" required />
+            <div class="password-wrap">
+              <input type="password" id="admin-passcode" placeholder="Enter admin passcode" autocomplete="current-password" required />
+              <button type="button" id="btn-toggle-passcode" class="btn-pw-toggle" aria-label="Show passcode" aria-pressed="false">Show</button>
+            </div>
           </div>
           <button type="submit" id="btn-admin-login" class="btn btn-primary btn-block">Unlock Admin Console</button>
         </form>
@@ -97,10 +100,13 @@
         </div>
       </div>
 
+      <!-- QUICK STATUS FILTER CHIPS -->
+      <div id="status-chips" class="status-chips" role="tablist" aria-label="Quick status filters"></div>
+
       <!-- FILTERS -->
       <div class="card filter-bar">
         <div class="search-box">
-          <input type="search" id="filter-search" placeholder="Search by student name, booking ID, or STL filename..." />
+          <input type="search" id="filter-search" aria-label="Search bookings" placeholder="Search by student name, booking ID, or STL filename..." />
         </div>
         <div class="filter-selects">
           <select id="filter-status" aria-label="Filter by job status">
@@ -120,8 +126,13 @@
         </div>
       </div>
 
-      <!-- QUEUE TABLE -->
+      <!-- QUEUE TABLE & MOBILE CARDS -->
       <div class="card table-card">
+        <div id="queue-loading" class="queue-loading hidden" aria-live="polite" aria-busy="true">
+          <div class="skeleton-item"></div>
+          <div class="skeleton-item"></div>
+          <div class="skeleton-item"></div>
+        </div>
         <div class="table-wrap">
           <table class="queue-table">
             <thead>
@@ -139,6 +150,9 @@
               <!-- Rendered by JS -->
             </tbody>
           </table>
+        </div>
+        <div id="queue-cards" class="queue-cards">
+          <!-- Rendered by JS for mobile -->
         </div>
       </div>
     </section>
@@ -159,7 +173,7 @@
         <!-- LEFT: SUBMITTED FORM DETAILS + STL DOWNLOAD -->
         <div class="insp-details">
           <div class="file-download-box">
-            <div>
+            <div class="fd-info">
               <div class="fd-label">Submitted 3D Model</div>
               <div class="fd-name" id="insp-file-name">model.stl</div>
               <div class="fd-size mono" id="insp-file-size">0 KB</div>
@@ -210,9 +224,9 @@
 
           <div class="field">
             <label>Estimated Print Duration</label>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-              <input type="number" id="edit-hours" min="0" max="500" placeholder="Hours" />
-              <input type="number" id="edit-minutes" min="0" max="59" placeholder="Minutes" />
+            <div class="duration-grid">
+              <input type="number" id="edit-hours" min="0" max="500" placeholder="Hours" aria-label="Estimated hours" />
+              <input type="number" id="edit-minutes" min="0" max="59" placeholder="Minutes" aria-label="Estimated minutes" />
             </div>
           </div>
 
@@ -309,6 +323,8 @@
       </div>
     </div>
   </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <script src="app.js"></script>
 </body>
