@@ -732,6 +732,9 @@
       if (ext === 'stl' && typeof analyzeInlineSTLFile === 'function') {
         if (note3mf) note3mf.classList.add('hidden');
         analyzeInlineSTLFile(file);
+      } else if (ext === '3mf' && typeof analyzeInline3MFFile === 'function') {
+        if (note3mf) note3mf.classList.add('hidden');
+        analyzeInline3MFFile(file);
       } else {
         if (inlineCard) inlineCard.classList.add('hidden');
         if (note3mf) note3mf.classList.toggle('hidden', ext !== '3mf');
@@ -1111,6 +1114,8 @@
     }
 
     let vol = 0;
+    let surfaceAreaMm2 = 0;
+    let overhangAreaMm2 = 0;
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
 
@@ -1126,6 +1131,16 @@
             + p3.x * (p1.y * p2.z - p2.y * p1.z)) / 6.0;
     }
 
+    function triAreaAndCz(p1, p2, p3) {
+      const ux = p2.x - p1.x, uy = p2.y - p1.y, uz = p2.z - p1.z;
+      const vx = p3.x - p1.x, vy = p3.y - p1.y, vz = p3.z - p1.z;
+      const cx = uy * vz - uz * vy;
+      const cy = uz * vx - ux * vz;
+      const cz = ux * vy - uy * vx;
+      const area2 = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      return { area: area2 * 0.5, nz: area2 > 0 ? cz / area2 : 0 };
+    }
+
     if (isBinary) {
       const triCount = view.getUint32(80, true);
       let offset = 84;
@@ -1137,12 +1152,27 @@
         updateBounds(p2.x, p2.y, p2.z);
         updateBounds(p3.x, p3.y, p3.z);
         vol += signedTriVol(p1, p2, p3);
+        surfaceAreaMm2 += triAreaAndCz(p1, p2, p3).area;
         offset += 50;
+      }
+      if (isFinite(minZ)) {
+        offset = 84;
+        for (let i = 0; i < triCount; i++) {
+          const p1 = { x: view.getFloat32(offset + 12, true), y: view.getFloat32(offset + 16, true), z: view.getFloat32(offset + 20, true) };
+          const p2 = { x: view.getFloat32(offset + 24, true), y: view.getFloat32(offset + 28, true), z: view.getFloat32(offset + 32, true) };
+          const p3 = { x: view.getFloat32(offset + 36, true), y: view.getFloat32(offset + 40, true), z: view.getFloat32(offset + 44, true) };
+          if (Math.min(p1.z, p2.z, p3.z) > minZ + 0.6) {
+            const { area, nz } = triAreaAndCz(p1, p2, p3);
+            if (nz < -0.5) overhangAreaMm2 += area;
+          }
+          offset += 50;
+        }
       }
     } else {
       const text = new TextDecoder().decode(buffer);
       const regex = /vertex\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)/g;
       const verts = [];
+      const tris = [];
       let m;
       while ((m = regex.exec(text)) !== null) {
         const p = { x: parseFloat(m[1]), y: parseFloat(m[2]), z: parseFloat(m[3]) };
@@ -1150,7 +1180,15 @@
         verts.push(p);
         if (verts.length === 3) {
           vol += signedTriVol(verts[0], verts[1], verts[2]);
+          const { area, nz } = triAreaAndCz(verts[0], verts[1], verts[2]);
+          surfaceAreaMm2 += area;
+          tris.push({ minTriZ: Math.min(verts[0].z, verts[1].z, verts[2].z), area, nz });
           verts.length = 0;
+        }
+      }
+      if (isFinite(minZ)) {
+        for (const t of tris) {
+          if (t.minTriZ > minZ + 0.6 && t.nz < -0.5) overhangAreaMm2 += t.area;
         }
       }
     }
@@ -1158,11 +1196,187 @@
     if (!isFinite(minX)) return null;
     return {
       volumeCm3: Math.abs(vol) / 1000.0,
+      surfaceAreaCm2: surfaceAreaMm2 / 100.0,
+      overhangRatio: surfaceAreaMm2 > 0 ? Math.min(1, overhangAreaMm2 / surfaceAreaMm2) : 0,
       dims: {
         x: Math.round(maxX - minX),
         y: Math.round(maxY - minY),
         z: Math.round(maxZ - minZ)
       }
+    };
+  }
+
+  // --- Lightweight Browser .3MF (ZIP) Reader ---
+  async function extract3MFTextEntries(buffer, targetPaths) {
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+    const dec = new TextDecoder();
+    const results = {};
+
+    // Locate End of Central Directory (EOCD)
+    let eocdOffset = -1;
+    const minOff = Math.max(0, bytes.length - 65557);
+    for (let i = bytes.length - 22; i >= minOff; i--) {
+      if (view.getUint32(i, true) === 0x06054b50) {
+        eocdOffset = i;
+        break;
+      }
+    }
+    if (eocdOffset === -1) return results;
+
+    const cdOffset = view.getUint32(eocdOffset + 16, true);
+    const totalEntries = view.getUint16(eocdOffset + 10, true);
+    let ptr = cdOffset;
+
+    for (let idx = 0; idx < totalEntries && ptr + 46 <= bytes.length; idx++) {
+      if (view.getUint32(ptr, true) !== 0x02014b50) break;
+      const compression = view.getUint16(ptr + 10, true);
+      const compSize = view.getUint32(ptr + 20, true);
+      const nameLen = view.getUint16(ptr + 28, true);
+      const extraLen = view.getUint16(ptr + 30, true);
+      const commentLen = view.getUint16(ptr + 32, true);
+      const localHeaderOffset = view.getUint32(ptr + 42, true);
+      const fileName = dec.decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
+      ptr += 46 + nameLen + extraLen + commentLen;
+
+      const matched = targetPaths.some((fn) => fn(fileName));
+      if (!matched) continue;
+      if (localHeaderOffset + 30 > bytes.length || view.getUint32(localHeaderOffset, true) !== 0x04034b50) continue;
+
+      const lNameLen = view.getUint16(localHeaderOffset + 26, true);
+      const lExtraLen = view.getUint16(localHeaderOffset + 28, true);
+      const dataStart = localHeaderOffset + 30 + lNameLen + lExtraLen;
+      const rawSlice = bytes.subarray(dataStart, dataStart + compSize);
+
+      try {
+        if (compression === 0) {
+          results[fileName] = dec.decode(rawSlice);
+        } else if (compression === 8 && typeof DecompressionStream !== 'undefined') {
+          const ds = new DecompressionStream('deflate-raw');
+          const writer = ds.writable.getWriter();
+          writer.write(rawSlice);
+          writer.close();
+          const decompBuf = await new Response(ds.readable).arrayBuffer();
+          results[fileName] = dec.decode(decompBuf);
+        }
+      } catch {
+        // Ignore corrupt/unsupported entry
+      }
+    }
+    return results;
+  }
+
+  function parse3MFModelXML(xmlText) {
+    const verts = [];
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+    const vRegex = /<vertex\b[^>]*>/g;
+    let vm;
+    while ((vm = vRegex.exec(xmlText)) !== null) {
+      const tag = vm[0];
+      const xm = /\bx="([^"]+)"/.exec(tag);
+      const ym = /\by="([^"]+)"/.exec(tag);
+      const zm = /\bz="([^"]+)"/.exec(tag);
+      if (!xm || !ym || !zm) continue;
+      const x = parseFloat(xm[1]), y = parseFloat(ym[1]), z = parseFloat(zm[1]);
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+      verts.push({ x, y, z });
+    }
+    if (!verts.length || !isFinite(minX)) return null;
+
+    let vol = 0;
+    let surfaceAreaMm2 = 0;
+    let overhangAreaMm2 = 0;
+    const tRegex = /<triangle\b[^>]*>/g;
+    let tm;
+    while ((tm = tRegex.exec(xmlText)) !== null) {
+      const tag = tm[0];
+      const v1m = /\bv1="(\d+)"/.exec(tag);
+      const v2m = /\bv2="(\d+)"/.exec(tag);
+      const v3m = /\bv3="(\d+)"/.exec(tag);
+      if (!v1m || !v2m || !v3m) continue;
+      const p1 = verts[parseInt(v1m[1], 10)];
+      const p2 = verts[parseInt(v2m[1], 10)];
+      const p3 = verts[parseInt(v3m[1], 10)];
+      if (!p1 || !p2 || !p3) continue;
+
+      vol += (p1.x * (p2.y * p3.z - p3.y * p2.z)
+            - p2.x * (p1.y * p3.z - p3.y * p1.z)
+            + p3.x * (p1.y * p2.z - p2.y * p1.z)) / 6.0;
+
+      const ux = p2.x - p1.x, uy = p2.y - p1.y, uz = p2.z - p1.z;
+      const vx = p3.x - p1.x, vy = p3.y - p1.y, vz = p3.z - p1.z;
+      const cx = uy * vz - uz * vy;
+      const cy = uz * vx - ux * vz;
+      const cz = ux * vy - uy * vx;
+      const area2 = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      const area = area2 * 0.5;
+      surfaceAreaMm2 += area;
+      if (Math.min(p1.z, p2.z, p3.z) > minZ + 0.6 && area2 > 0 && (cz / area2) < -0.5) {
+        overhangAreaMm2 += area;
+      }
+    }
+
+    if (Math.abs(vol) <= 0) return null;
+    return {
+      volumeCm3: Math.abs(vol) / 1000.0,
+      surfaceAreaCm2: surfaceAreaMm2 / 100.0,
+      overhangRatio: surfaceAreaMm2 > 0 ? Math.min(1, overhangAreaMm2 / surfaceAreaMm2) : 0,
+      dims: {
+        x: Math.round(maxX - minX),
+        y: Math.round(maxY - minY),
+        z: Math.round(maxZ - minZ)
+      }
+    };
+  }
+
+  async function parse3MFBuffer(buffer) {
+    const entries = await extract3MFTextEntries(buffer, [
+      (n) => /slice_info\.config$/i.test(n),
+      (n) => /\.gcode$/i.test(n),
+      (n) => /3dmodel\.model$/i.test(n)
+    ]);
+
+    let exactGrams = null;
+    const sliceInfoKey = Object.keys(entries).find((k) => /slice_info\.config$/i.test(k));
+    if (sliceInfoKey) {
+      const xml = entries[sliceInfoKey];
+      const wMatch = /key="(?:weight|total_weight|filament_used_g)"\s+value="([\d.]+)"/i.exec(xml)
+        || /used_g="([\d.]+)"/i.exec(xml);
+      if (wMatch) {
+        const g = parseFloat(wMatch[1]);
+        if (g > 0) exactGrams = g;
+      }
+    }
+
+    if (!exactGrams) {
+      const gcodeKey = Object.keys(entries).find((k) => /\.gcode$/i.test(k));
+      if (gcodeKey) {
+        const gc = entries[gcodeKey].slice(0, 12000);
+        const gm = /;\s*(?:total\s+)?filament\s+used\s*\[g\]\s*=\s*([\d.]+)/i.exec(gc);
+        if (gm) {
+          const g = parseFloat(gm[1]);
+          if (g > 0) exactGrams = g;
+        }
+      }
+    }
+
+    let mesh = null;
+    const modelKey = Object.keys(entries).find((k) => /3dmodel\.model$/i.test(k));
+    if (modelKey) {
+      mesh = parse3MFModelXML(entries[modelKey]);
+    }
+
+    if (!exactGrams && !mesh) return null;
+    return {
+      exactGrams,
+      volumeCm3: mesh ? mesh.volumeCm3 : 0,
+      surfaceAreaCm2: mesh ? mesh.surfaceAreaCm2 : 0,
+      overhangRatio: mesh ? mesh.overhangRatio : 0,
+      dims: mesh ? mesh.dims : null
     };
   }
 
@@ -1189,7 +1403,41 @@
         showAlert(el.bookingAlert, 'Could not parse STL geometry (corrupt or empty mesh). Please verify or re-export your .STL file.');
         return;
       }
-      inlineParsedSTL = { name: file.name, volumeCm3: parsed.volumeCm3, dims: parsed.dims };
+      inlineParsedSTL = {
+        name: file.name,
+        exactGrams: null,
+        volumeCm3: parsed.volumeCm3,
+        surfaceAreaCm2: parsed.surfaceAreaCm2,
+        overhangRatio: parsed.overhangRatio,
+        dims: parsed.dims
+      };
+      if (inlineCard) inlineCard.classList.remove('hidden');
+      updateInlineSTLEstimate();
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function analyzeInline3MFFile(file) {
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const inlineCard = document.getElementById('stl-inline-estimator');
+      const note3mf = document.getElementById('inline-3mf-note');
+      const parsed = await parse3MFBuffer(ev.target.result);
+      if (!parsed) {
+        inlineParsedSTL = null;
+        if (inlineCard) inlineCard.classList.add('hidden');
+        if (note3mf) note3mf.classList.remove('hidden');
+        return;
+      }
+      inlineParsedSTL = {
+        name: file.name,
+        exactGrams: parsed.exactGrams,
+        volumeCm3: parsed.volumeCm3,
+        surfaceAreaCm2: parsed.surfaceAreaCm2,
+        overhangRatio: parsed.overhangRatio,
+        dims: parsed.dims
+      };
+      if (note3mf) note3mf.classList.add('hidden');
       if (inlineCard) inlineCard.classList.remove('hidden');
       updateInlineSTLEstimate();
     };
@@ -1201,34 +1449,52 @@
     const filamentEl = document.getElementById('f-filament-type');
     const printerEl = document.getElementById('f-printer');
     const infillEl = document.getElementById('inline-stl-infill');
+    const infillField = infillEl ? infillEl.closest('.field') : null;
 
     const mat = filamentEl ? filamentEl.value.toLowerCase() : 'petg';
     const printer = printerEl ? printerEl.value : 'Bambulab A1';
     const infill = infillEl ? (parseFloat(infillEl.value) || 0.15) : 0.15;
 
-    const density = getMaterialDensity(mat);
-    const effectiveFill = Math.min(1.0, 0.22 + (infill * 0.78));
-    // 25% support & purge allowance is always included automatically
-    const gramsWithBuffer = Math.max(1, Math.round(inlineParsedSTL.volumeCm3 * effectiveFill * density * 1.25));
+    let billableGrams = 0;
+    if (inlineParsedSTL.exactGrams && inlineParsedSTL.exactGrams > 0) {
+      // Exact Bambu Studio sliced weight from .3MF metadata
+      billableGrams = Math.max(1, Math.round(inlineParsedSTL.exactGrams));
+      if (infillField) infillField.classList.add('hidden');
+    } else {
+      // Surface-area shell + interior infill + overhang-aware support allowance
+      if (infillField) infillField.classList.remove('hidden');
+      const density = getMaterialDensity(mat);
+      const shellVol = Math.min(inlineParsedSTL.volumeCm3, (inlineParsedSTL.surfaceAreaCm2 || 0) * 0.085);
+      const interiorVol = Math.max(0, inlineParsedSTL.volumeCm3 - shellVol);
+      const materialVol = shellVol + (interiorVol * infill);
+      const supportFactor = Math.min(0.25, (inlineParsedSTL.overhangRatio || 0) * 0.85);
+      billableGrams = Math.max(1, Math.round(materialVol * density * (1.03 + supportFactor)));
+    }
 
     // Student rate only: ₱1.00/g for PLA, ₱2.50/g for PETG/ABS/TPU/Other, ₱50 minimum
     const rate = (mat === 'pla') ? 1.0 : 2.5;
-    const printCost = Math.max(50, gramsWithBuffer * rate);
+    const printCost = Math.max(50, billableGrams * rate);
 
     const d = inlineParsedSTL.dims;
-    document.getElementById('inline-stl-meta').textContent = `Dimensions: ${d.x} × ${d.y} × ${d.z} mm`;
+    document.getElementById('inline-stl-meta').textContent = d
+      ? `Dimensions: ${d.x} × ${d.y} × ${d.z} mm`
+      : 'Sliced .3MF File Ready';
     document.getElementById('inline-stl-price').textContent = fmtPeso(printCost);
 
     const warnEl = document.getElementById('inline-stl-bed-warn');
     if (warnEl) {
-      const limit = printer.includes('mini') ? 180 : 256;
-      const oversized = d.x > limit || d.y > limit || d.z > limit;
-      warnEl.classList.remove('hidden', 'ok');
-      if (oversized) {
-        warnEl.textContent = `⚠ Model (${d.x}×${d.y}×${d.z} mm) exceeds ${printer} bed (${limit}×${limit}×${limit} mm).`;
+      if (!d) {
+        warnEl.classList.add('hidden');
       } else {
-        warnEl.classList.add('ok');
-        warnEl.textContent = `✓ Fits within ${printer} bed (${limit}×${limit}×${limit} mm).`;
+        const limit = printer.includes('mini') ? 180 : 256;
+        const oversized = d.x > limit || d.y > limit || d.z > limit;
+        warnEl.classList.remove('hidden', 'ok');
+        if (oversized) {
+          warnEl.textContent = `⚠ Model (${d.x}×${d.y}×${d.z} mm) exceeds ${printer} bed (${limit}×${limit}×${limit} mm).`;
+        } else {
+          warnEl.classList.add('ok');
+          warnEl.textContent = `✓ Fits within ${printer} bed (${limit}×${limit}×${limit} mm).`;
+        }
       }
     }
   }
