@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Printer Lab — Admin Console</title>
+  <meta name="description" content="Lab admin console for downloading student STL files, managing 3D print queues, and setting material fees." />
+  <meta name="theme-color" content="#111827" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M3 9h18"/>
+            <path d="M9 21V9"/>
+          </svg>
+        </div>
+        <div>
+          <span class="brand-title">3D Print Lab · Admin</span>
+          <span class="brand-sub">Queue, STL Downloads &amp; Pricing</span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button type="button" id="btn-install-app" class="btn btn-secondary btn-sm hidden" title="Download & install admin app">
+          Install App
+        </button>
+
+        <button type="button" id="btn-backend-settings" class="conn-pill" title="Configure Google Apps Script URL">
+          <span class="conn-dot" id="conn-dot"></span>
+          <span id="conn-label">Local Preview</span>
+        </button>
+
+        <button type="button" id="btn-logout" class="btn btn-ghost btn-sm hidden">Sign Out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ADMIN LOGIN GATE -->
+    <section id="admin-auth-section" class="auth-center">
+      <div class="card auth-card">
+        <div class="auth-head">
+          <span class="role-tag">Lab Administrator</span>
+          <h1>Admin Console Sign In</h1>
+          <p>Enter the lab admin passcode to review print requests, download student STL files, and assign material fees.</p>
+        </div>
+
+        <div id="admin-auth-alert" class="alert hidden" role="alert"></div>
+
+        <form id="admin-login-form" class="stack-form" novalidate>
+          <div class="field">
+            <label for="admin-passcode">Admin Passcode</label>
+            <input type="password" id="admin-passcode" placeholder="Enter admin passcode" required />
+            <span class="field-hint">Default passcode: <code>admin1234</code> (configurable in <code>Code.gs</code>)</span>
+          </div>
+          <button type="submit" id="btn-admin-login" class="btn btn-primary btn-block">Unlock Admin Console</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ADMIN WORKSPACE -->
+    <section id="admin-workspace" class="hidden">
+      <div class="workspace-head">
+        <div>
+          <h1>Print Job Queue</h1>
+          <p>Download submitted <code>.STL</code> / <code>.3MF</code> files for slicing and assign fees for students.</p>
+        </div>
+        <button type="button" id="btn-refresh-queue" class="btn btn-secondary">Refresh Queue</button>
+      </div>
+
+      <!-- SUMMARY METRICS -->
+      <div class="metrics-strip">
+        <div class="metric-card">
+          <span class="metric-label">Total Bookings</span>
+          <strong class="metric-value mono" id="stat-total">0</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Pending Review</span>
+          <strong class="metric-value mono" id="stat-pending">0</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Active / Printing</span>
+          <strong class="metric-value mono" id="stat-active">0</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Unpaid Total</span>
+          <strong class="metric-value mono" id="stat-unpaid">₱ 0.00</strong>
+        </div>
+      </div>
+
+      <!-- FILTERS -->
+      <div class="card filter-bar">
+        <div class="search-box">
+          <input type="search" id="filter-search" placeholder="Search by student name, booking ID, or STL filename..." />
+        </div>
+        <div class="filter-selects">
+          <select id="filter-status" aria-label="Filter by job status">
+            <option value="ALL">All Job Statuses</option>
+            <option value="Pending Review">Pending Review</option>
+            <option value="Approved">Approved</option>
+            <option value="Printing">Printing</option>
+            <option value="Ready for Pickup">Ready for Pickup</option>
+            <option value="Completed">Completed</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+          <select id="filter-payment" aria-label="Filter by payment status">
+            <option value="ALL">All Payments</option>
+            <option value="Unpaid">Unpaid</option>
+            <option value="Paid">Paid</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- QUEUE TABLE -->
+      <div class="card table-card">
+        <div class="table-wrap">
+          <table class="queue-table">
+            <thead>
+              <tr>
+                <th>Booking</th>
+                <th>Student</th>
+                <th>Model File</th>
+                <th>Specs</th>
+                <th>Job Status</th>
+                <th>Amount to Pay</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="queue-tbody">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- JOB INSPECTOR & PRICING MODAL -->
+  <div id="inspector-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="inspector-title">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <div>
+          <span class="mono id-chip" id="insp-booking-id">3DP-000000</span>
+          <h3 id="inspector-title">Job Request Details</h3>
+        </div>
+        <button type="button" class="icon-close" id="btn-close-inspector" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body inspector-grid">
+        <!-- LEFT: SUBMITTED FORM DETAILS + STL DOWNLOAD -->
+        <div class="insp-details">
+          <div class="file-download-box">
+            <div>
+              <div class="fd-label">Submitted 3D Model</div>
+              <div class="fd-name" id="insp-file-name">model.stl</div>
+              <div class="fd-size mono" id="insp-file-size">0 KB</div>
+            </div>
+            <button type="button" id="btn-insp-download" class="btn btn-primary btn-sm">Download STL</button>
+          </div>
+
+          <div class="detail-group">
+            <h4>Student Information</h4>
+            <dl class="kv-list">
+              <div><dt>Full Name</dt><dd id="insp-student-name">—</dd></div>
+              <div><dt>Grade &amp; Section</dt><dd id="insp-grade">—</dd></div>
+              <div><dt>Phone</dt><dd id="insp-phone">—</dd></div>
+              <div><dt>Booking Date</dt><dd id="insp-date" class="mono">—</dd></div>
+            </dl>
+          </div>
+
+          <div class="detail-group">
+            <h4>Print &amp; Material Details</h4>
+            <dl class="kv-list">
+              <div><dt>Filament</dt><dd id="insp-filament">—</dd></div>
+              <div><dt>Est. Weight</dt><dd id="insp-weight" class="mono">—</dd></div>
+              <div><dt>Est. Duration</dt><dd id="insp-duration" class="mono">—</dd></div>
+              <div><dt>Supports</dt><dd id="insp-supports">—</dd></div>
+            </dl>
+            <div class="purpose-box">
+              <span class="kv-label">Purpose</span>
+              <p id="insp-purpose">—</p>
+            </div>
+          </div>
+
+          <div class="detail-group">
+            <h4>Pre-Check Checklist &amp; Signature</h4>
+            <ul class="chk-summary" id="insp-checklist"></ul>
+            <p class="sig-line">Signed: <strong id="insp-signature">—</strong> (<span id="insp-sig-date" class="mono">—</span>)</p>
+          </div>
+        </div>
+
+        <!-- RIGHT: ADMIN PRICING & STATUS FORM -->
+        <form id="inspector-form" class="insp-controls">
+          <h4>Admin Assessment &amp; Billing</h4>
+          <div id="insp-alert" class="alert hidden" role="alert"></div>
+
+          <div class="field">
+            <label for="edit-weight">Estimated Material Weight (g)</label>
+            <input type="number" id="edit-weight" min="0" step="0.1" placeholder="e.g. 45" />
+          </div>
+
+          <div class="field">
+            <label>Estimated Print Duration</label>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <input type="number" id="edit-hours" min="0" max="500" placeholder="Hours" />
+              <input type="number" id="edit-minutes" min="0" max="59" placeholder="Minutes" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="edit-supports">Support Structure Required?</label>
+            <select id="edit-supports">
+              <option value="">Not Set</option>
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="edit-price">Amount to Pay (₱ PHP)</label>
+            <div class="input-prefix">
+              <span class="prefix">₱</span>
+              <input type="number" id="edit-price" min="0" step="0.01" placeholder="e.g. 150.00" />
+            </div>
+            <span class="field-hint">Notifies student immediately when updated.</span>
+          </div>
+
+          <div class="field">
+            <label for="edit-payment-status">Payment Status</label>
+            <select id="edit-payment-status">
+              <option value="Unpaid">Unpaid</option>
+              <option value="Paid">Paid</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="edit-job-status">Job Status</label>
+            <select id="edit-job-status">
+              <option value="Pending Review">Pending Review</option>
+              <option value="Approved">Approved</option>
+              <option value="Printing">Printing</option>
+              <option value="Ready for Pickup">Ready for Pickup</option>
+              <option value="Completed">Completed</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="edit-printer">Assigned Printer</label>
+            <select id="edit-printer">
+              <option value="Bambulab A1">Bambulab A1</option>
+              <option value="Bambulab A1 mini">Bambulab A1 mini</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="edit-notes">Admin Notes (Visible to Student)</label>
+            <textarea id="edit-notes" rows="3" placeholder="e.g. Please pay at the lab counter before printing starts."></textarea>
+          </div>
+
+          <button type="submit" id="btn-save-job" class="btn btn-primary btn-block">Save Pricing &amp; Status</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- BACKEND SETTINGS MODAL -->
+  <div id="settings-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="settings-modal-title">Google Apps Script Connection</h3>
+        <button type="button" class="icon-close" id="btn-close-settings" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Paste your deployed Google Apps Script Web App URL to connect to live Google Sheets &amp; Google Drive storage. Leave blank to use <strong>Local Preview Mode</strong>.</p>
+        <div class="field">
+          <label for="input-gas-url">Web App URL</label>
+          <input type="url" id="input-gas-url" placeholder="https://script.google.com/macros/s/.../exec" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btn-clear-gas" class="btn btn-ghost">Use Local Preview</button>
+        <button type="button" id="btn-save-gas" class="btn btn-primary">Save Connection</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
