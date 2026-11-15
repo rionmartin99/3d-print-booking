@@ -151,6 +151,7 @@
   }
 
   function updateConnectionUI() {
+    if (!el.connDot || !el.connLabel) return;
     const url = getGasUrl();
     if (url) {
       el.connDot.classList.add('live');
@@ -1049,10 +1050,12 @@
   el.btnRefreshBookings.addEventListener('click', loadMyBookings);
 
   // --- Modals ---
-  el.btnBackendSettings.addEventListener('click', () => {
-    el.inputGasUrl.value = getGasUrl();
-    el.settingsModal.classList.remove('hidden');
-  });
+  if (el.btnBackendSettings) {
+    el.btnBackendSettings.addEventListener('click', () => {
+      el.inputGasUrl.value = getGasUrl();
+      el.settingsModal.classList.remove('hidden');
+    });
+  }
 
   el.btnCloseSettings.addEventListener('click', () => el.settingsModal.classList.add('hidden'));
 

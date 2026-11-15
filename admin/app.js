@@ -64,6 +64,7 @@
   }
 
   function updateConnectionUI() {
+    if (!el.connDot || !el.connLabel) return;
     const url = getGasUrl();
     if (url) {
       el.connDot.classList.add('live');
