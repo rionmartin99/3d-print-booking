@@ -785,6 +785,40 @@
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
 
+  const INSTALL_DISMISS_KEY = '3dp_admin_install_dismissed';
+  const installBanner = document.getElementById('install-banner');
+  const btnBannerInstall = document.getElementById('btn-banner-install');
+  const btnBannerDismiss = document.getElementById('btn-banner-dismiss');
+  const installManualGuide = document.getElementById('install-manual-guide');
+
+  function isAppInstalled() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+
+  function showInstallBannerIfFirstTime() {
+    if (!installBanner) return;
+    if (isAppInstalled() || localStorage.getItem(INSTALL_DISMISS_KEY) === '1') {
+      installBanner.classList.add('hidden');
+      return;
+    }
+    installBanner.classList.remove('hidden');
+  }
+
+  async function triggerInstallFlow() {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if (el.btnInstallApp) el.btnInstallApp.classList.add('hidden');
+      if (choice && choice.outcome === 'accepted') {
+        localStorage.setItem(INSTALL_DISMISS_KEY, '1');
+        if (installBanner) installBanner.classList.add('hidden');
+      }
+    } else if (installManualGuide) {
+      installManualGuide.classList.toggle('hidden');
+    }
+  }
+
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
@@ -793,15 +827,23 @@
     }
   });
 
-  if (el.btnInstallApp) {
-    el.btnInstallApp.addEventListener('click', async () => {
-      if (!deferredInstallPrompt) return;
-      deferredInstallPrompt.prompt();
-      await deferredInstallPrompt.userChoice;
-      deferredInstallPrompt = null;
-      el.btnInstallApp.classList.add('hidden');
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    if (el.btnInstallApp) el.btnInstallApp.classList.add('hidden');
+    localStorage.setItem(INSTALL_DISMISS_KEY, '1');
+    if (installBanner) installBanner.classList.add('hidden');
+  });
+
+  if (el.btnInstallApp) el.btnInstallApp.addEventListener('click', triggerInstallFlow);
+  if (btnBannerInstall) btnBannerInstall.addEventListener('click', triggerInstallFlow);
+  if (btnBannerDismiss) {
+    btnBannerDismiss.addEventListener('click', () => {
+      localStorage.setItem(INSTALL_DISMISS_KEY, '1');
+      if (installBanner) installBanner.classList.add('hidden');
     });
   }
+
+  showInstallBannerIfFirstTime();
 
   // --- Init ---
   updateConnectionUI();

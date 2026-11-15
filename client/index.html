@@ -74,6 +74,26 @@
   </header>
 
   <main class="container">
+    <!-- FIRST-TIME USER INSTALL BANNER -->
+    <aside id="install-banner" class="install-banner hidden" aria-label="Install app prompt">
+      <div class="install-banner-body">
+        <div class="install-banner-icon" aria-hidden="true">📲</div>
+        <div class="install-banner-text">
+          <strong>Install the 3D Print Lab App</strong>
+          <p>Save to your home screen for one-tap access—no need to memorize the URL.</p>
+        </div>
+        <div class="install-banner-actions">
+          <button type="button" id="btn-banner-install" class="btn btn-primary btn-sm">Install App</button>
+          <button type="button" id="btn-banner-dismiss" class="btn btn-ghost btn-sm">Later</button>
+        </div>
+      </div>
+      <div id="install-manual-guide" class="install-guide hidden">
+        <strong>How to add to your home screen:</strong>
+        <span>• <b>iPhone / iPad (Safari):</b> Tap <b>Share</b> (↑) → <b>Add to Home Screen</b>.</span>
+        <span>• <b>Android (Chrome):</b> Tap <b>⋮</b> menu → <b>Install app</b> or <b>Add to Home screen</b>.</span>
+      </div>
+    </aside>
+
     <!-- AUTHENTICATION GATE -->
     <section id="auth-section" class="auth-wrapper">
       <div class="auth-intro">
