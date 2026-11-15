@@ -554,6 +554,11 @@
       if (b.driveFileId && getGasUrl()) {
         try {
           const res = await apiCall('adminDownloadFile', { fileId: b.driveFileId });
+          if (res.ok && res.driveUrl) {
+            window.open(res.driveUrl, '_blank', 'noopener');
+            showToast('Opened large file in Google Drive.', 'info');
+            return;
+          }
           if (res.ok && res.base64) {
             const name = b.fileName || res.fileName || `${b.bookingId}.stl`;
             triggerBase64Download(res.base64, name);

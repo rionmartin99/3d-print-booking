@@ -1564,6 +1564,18 @@ textarea.field-error,
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.drive-fallback-box {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt, #f8fafc);
+  border: 1px dashed var(--border);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.drive-fallback-box .field {
+  margin-bottom: 0;
+}
 
 /* GCash Payment Boxes & One-Tap Copy Button */
 .gcash-inline-box {

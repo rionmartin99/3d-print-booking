@@ -186,6 +186,8 @@ function doPost(e) {
         return handleRegister(data);
       case 'login':
         return handleLogin(data);
+      case 'initResumableUpload':
+        return handleInitResumableUpload(data);
       case 'createBooking':
         return handleCreateBooking(data);
       case 'getMyBookings':
@@ -293,6 +295,61 @@ function handleLogin(data) {
   });
 }
 
+function handleInitResumableUpload(data) {
+  const student = data.student || {};
+  if (!verifyStudent(student.studentId, student.firstName, student.lastName)) {
+    return jsonResponse({ ok: false, error: 'Student authentication failed.' });
+  }
+
+  const fileName = String(data.fileName || '').trim();
+  const fileSize = Number(data.fileSize || 0);
+  if (!fileName) {
+    return jsonResponse({ ok: false, error: 'File name is required.' });
+  }
+
+  const ext = fileName.split('.').pop().toLowerCase();
+  if (ext !== 'stl' && ext !== '3mf') {
+    return jsonResponse({ ok: false, error: 'Only .STL or .3MF files are allowed.' });
+  }
+
+  if (fileSize <= 0 || fileSize > 200 * 1024 * 1024) {
+    return jsonResponse({ ok: false, error: 'File must be between 1 byte and 200 MB.' });
+  }
+
+  const folder = getOrCreateDriveFolder();
+  const safeName = 'UPLOAD_' + Date.now() + '_' + fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const origin = String(data.origin || 'https://rionmartin99.github.io').trim();
+
+  const resp = UrlFetchApp.fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
+    {
+      method: 'post',
+      contentType: 'application/json; charset=UTF-8',
+      headers: {
+        Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        Origin: origin
+      },
+      payload: JSON.stringify({
+        name: safeName,
+        parents: [folder.getId()]
+      }),
+      muteHttpExceptions: true
+    }
+  );
+
+  const code = resp.getResponseCode();
+  const headers = resp.getAllHeaders();
+  const uploadUrl = headers.Location || headers.location || '';
+  if (code < 200 || code >= 300 || !uploadUrl) {
+    return jsonResponse({
+      ok: false,
+      error: 'Could not start Google Drive resumable upload (HTTP ' + code + ').'
+    });
+  }
+
+  return jsonResponse({ ok: true, uploadUrl: uploadUrl });
+}
+
 function handleCreateBooking(data) {
   const student = data.student || {};
   if (!verifyStudent(student.studentId, student.firstName, student.lastName)) {
@@ -300,31 +357,54 @@ function handleCreateBooking(data) {
   }
 
   const fileData = data.file || {};
-  if (!fileData.base64 || !fileData.name) {
-    return jsonResponse({ ok: false, error: 'Please upload an STL or 3MF file.' });
-  }
+  const externalUrl = String(fileData.externalUrl || '').trim();
+  const existingDriveId = String(fileData.driveFileId || '').trim();
+  const hasBase64 = Boolean(fileData.base64 && fileData.name);
+  const hasDriveId = Boolean(existingDriveId && fileData.name);
+  const hasExternalUrl = /^https:\/\/\S+/i.test(externalUrl);
 
-  const ext = String(fileData.name).split('.').pop().toLowerCase();
-  if (ext !== 'stl' && ext !== '3mf') {
-    return jsonResponse({ ok: false, error: 'Only .STL or .3MF files are allowed.' });
-  }
-
-  const decoded = Utilities.base64Decode(fileData.base64);
-  if (decoded.length > 20 * 1024 * 1024) {
-    return jsonResponse({ ok: false, error: 'File exceeds the 20 MB limit.' });
+  if (!hasBase64 && !hasDriveId && !hasExternalUrl) {
+    return jsonResponse({ ok: false, error: 'Please upload an STL/3MF file or provide a valid Google Drive link.' });
   }
 
   const bookingId = '3DP-' + Utilities.getUuid().slice(0, 8).toUpperCase();
   const now = new Date().toISOString();
 
-  // Save STL/3MF file privately to Google Drive (admin downloads via passcode-protected endpoint)
-  const folder = getOrCreateDriveFolder();
-  const safeName = bookingId + '_' + String(fileData.name).replace(/[^a-zA-Z0-9._-]/g, '_');
-  const blob = Utilities.newBlob(decoded, fileData.mimeType || 'application/octet-stream', safeName);
-  const driveFile = folder.createFile(blob);
+  let driveFileId = '';
+  let downloadUrl = hasExternalUrl ? externalUrl : '';
+  let recordedFileName = String(fileData.name || 'Google Drive Link').trim();
+  let recordedFileSize = Number(fileData.size || 0);
 
-  const driveFileId = driveFile.getId();
-  const downloadUrl = '';
+  if (hasBase64) {
+    const ext = recordedFileName.split('.').pop().toLowerCase();
+    if (ext !== 'stl' && ext !== '3mf') {
+      return jsonResponse({ ok: false, error: 'Only .STL or .3MF files are allowed.' });
+    }
+
+    const decoded = Utilities.base64Decode(fileData.base64);
+    if (decoded.length > 35 * 1024 * 1024) {
+      return jsonResponse({ ok: false, error: 'Direct upload exceeds the 35 MB limit. Use large-file upload or a Google Drive link.' });
+    }
+
+    const folder = getOrCreateDriveFolder();
+    const safeName = bookingId + '_' + recordedFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const blob = Utilities.newBlob(decoded, fileData.mimeType || 'application/octet-stream', safeName);
+    const driveFile = folder.createFile(blob);
+
+    driveFileId = driveFile.getId();
+    recordedFileSize = recordedFileSize || decoded.length;
+  } else if (hasDriveId) {
+    const ext = recordedFileName.split('.').pop().toLowerCase();
+    if (ext !== 'stl' && ext !== '3mf') {
+      return jsonResponse({ ok: false, error: 'Only .STL or .3MF files are allowed.' });
+    }
+
+    const driveFile = DriveApp.getFileById(existingDriveId);
+    const safeName = bookingId + '_' + recordedFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    driveFile.setName(safeName);
+    driveFileId = driveFile.getId();
+    recordedFileSize = recordedFileSize || driveFile.getSize();
+  }
 
   const { bookingsSheet } = ensureSheets();
   const checklist = data.checklist || {};
@@ -354,10 +434,10 @@ function handleCreateBooking(data) {
     sanitizeCell(data.purpose || ''),
     data.signatureName || '',
     data.signatureDate || '',
-    fileData.name,
+    sanitizeCell(recordedFileName),
     driveFileId,
-    downloadUrl,
-    fileData.size || decoded.length,
+    sanitizeCell(downloadUrl),
+    recordedFileSize,
     'Pending Review',
     '',
     'Unpaid',
@@ -528,6 +608,13 @@ function handleAdminDownloadFile(data) {
   }
 
   const file = DriveApp.getFileById(fileId);
+  if (file.getSize() > 35 * 1024 * 1024) {
+    return jsonResponse({
+      ok: true,
+      fileName: file.getName(),
+      driveUrl: 'https://drive.google.com/file/d/' + file.getId() + '/view'
+    });
+  }
   const bytes = file.getBlob().getBytes();
   return jsonResponse({
     ok: true,

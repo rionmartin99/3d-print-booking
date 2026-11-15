@@ -249,7 +249,7 @@
                   </svg>
                 </div>
                 <p class="dropzone-title">Drop your <strong>.STL</strong> or <strong>.3MF</strong> file here, or <span class="link-text">browse</span></p>
-                <p class="dropzone-sub">Maximum file size: 20 MB &middot; 1 file per booking</p>
+                <p class="dropzone-sub">Up to 35 MB direct &middot; Up to 200 MB large-file upload &middot; 1 file per booking</p>
               </div>
 
               <div class="file-selected hidden" id="dropzone-filled">
@@ -271,6 +271,14 @@
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
               </svg>
               <span><strong>Printing multiple files?</strong> Please submit a separate booking for each file so every print job can be monitored accurately.</span>
+            </div>
+
+            <div class="drive-fallback-box">
+              <div class="field">
+                <label for="f-drive-link">Or paste a Google Drive Link <span class="label-note">(for files &gt; 200 MB or backup)</span></label>
+                <input type="url" id="f-drive-link" placeholder="https://drive.google.com/file/d/..." />
+                <span class="field-hint">Set sharing to <strong>Anyone with the link</strong> so the Lab Admin can download your model.</span>
+              </div>
             </div>
 
             <div id="stl-inline-estimator" class="stl-inline-card hidden">

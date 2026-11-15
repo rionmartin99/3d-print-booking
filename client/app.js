@@ -500,8 +500,8 @@
         signatureDate: payload.signatureDate,
         fileName: payload.file.name,
         fileSizeBytes: payload.file.size,
-        localFileBase64: payload.file.base64,
-        downloadUrl: '',
+        localFileBase64: payload.file.base64 || '',
+        downloadUrl: payload.file.externalUrl || '',
         jobStatus: 'Pending Review',
         priceToPay: null,
         paymentStatus: 'Unpaid',
@@ -695,6 +695,59 @@
   el.navMyBookings.addEventListener('click', () => switchPortalView('history'));
 
   // --- File Dropzone ---
+  const DIRECT_UPLOAD_LIMIT = 35 * 1024 * 1024;
+  const MAX_RESUMABLE_LIMIT = 200 * 1024 * 1024;
+
+  async function uploadFileResumableToDrive(file, onProgress) {
+    const initRes = await apiCall('initResumableUpload', {
+      student: currentStudent,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type || 'application/octet-stream',
+      origin: window.location.origin
+    });
+    if (!initRes.ok || !initRes.uploadUrl) {
+      throw new Error(initRes.error || 'Could not initiate large-file upload.');
+    }
+
+    const chunkSize = 8 * 1024 * 1024; // 8 MiB (multiple of 256 KiB required by Google Drive)
+    let offset = 0;
+    let uploadedJson = null;
+
+    while (offset < file.size) {
+      const end = Math.min(offset + chunkSize, file.size);
+      const chunk = file.slice(offset, end);
+      const resp = await fetch(initRes.uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Range': `bytes ${offset}-${end - 1}/${file.size}`
+        },
+        body: chunk
+      });
+
+      if (resp.status === 308) {
+        offset = end;
+        if (typeof onProgress === 'function') {
+          onProgress(Math.round((offset / file.size) * 100));
+        }
+        continue;
+      }
+
+      if (!resp.ok) {
+        throw new Error(`Drive upload failed (HTTP ${resp.status}).`);
+      }
+
+      uploadedJson = await resp.json();
+      if (typeof onProgress === 'function') onProgress(100);
+      break;
+    }
+
+    if (!uploadedJson || !uploadedJson.id) {
+      throw new Error('Large-file upload finished without a Google Drive file ID.');
+    }
+    return uploadedJson.id;
+  }
+
   function handleFileSelection(file) {
     if (!file) return;
     const ext = file.name.split('.').pop().toLowerCase();
@@ -706,24 +759,19 @@
       showAlert(el.bookingAlert, 'Selected file is empty (0 bytes). Please choose a valid .STL or .3MF file.');
       return;
     }
-    if (file.size > 20 * 1024 * 1024) {
-      showAlert(el.bookingAlert, 'File exceeds the 20 MB limit.');
+    if (file.size > MAX_RESUMABLE_LIMIT) {
+      showAlert(el.bookingAlert, 'File exceeds the 200 MB upload limit. Please paste a Google Drive link below instead.');
       return;
     }
     hideAlert(el.bookingAlert);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result.split(',')[1];
-      selectedFile = {
-        name: file.name,
-        size: file.size,
-        mimeType: file.type || 'application/octet-stream',
-        base64
-      };
+    const applySelectedUI = (fileObj) => {
+      selectedFile = fileObj;
       el.fileExtBadge.textContent = ext.toUpperCase();
       el.fileNameDisplay.textContent = file.name;
-      el.fileSizeDisplay.textContent = formatBytes(file.size);
+      el.fileSizeDisplay.textContent = fileObj.requiresResumable
+        ? `${formatBytes(file.size)} · Large-file Drive upload`
+        : formatBytes(file.size);
       el.dropzoneEmpty.classList.add('hidden');
       el.dropzoneFilled.classList.remove('hidden');
 
@@ -740,6 +788,28 @@
         if (note3mf) note3mf.classList.toggle('hidden', ext !== '3mf');
       }
       updateStepProgress();
+    };
+
+    if (file.size > DIRECT_UPLOAD_LIMIT) {
+      applySelectedUI({
+        name: file.name,
+        size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        rawFile: file,
+        requiresResumable: true
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      applySelectedUI({
+        name: file.name,
+        size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        base64
+      });
     };
     reader.readAsDataURL(file);
   }
@@ -851,8 +921,14 @@
       return;
     }
 
-    if (!selectedFile) {
-      focusMissedField(el.dropzone, 'Please upload your .STL or .3MF 3D model file.');
+    const driveLinkEl = document.getElementById('f-drive-link');
+    const driveLink = driveLinkEl ? driveLinkEl.value.trim() : '';
+    if (!selectedFile && !driveLink) {
+      focusMissedField(el.dropzone, 'Please upload your .STL or .3MF file, or paste a Google Drive link below.');
+      return;
+    }
+    if (driveLink && !/^https:\/\/\S+/i.test(driveLink)) {
+      focusMissedField(driveLinkEl, 'Please enter a valid https:// Google Drive link.');
       return;
     }
 
@@ -895,32 +971,67 @@
       return;
     }
 
-    const payload = {
-      student: currentStudent,
-      fullName: document.getElementById('f-full-name').value.trim(),
-      gradeSection: document.getElementById('f-grade-section').value.trim(),
-      phone: document.getElementById('f-phone').value.trim(),
-      bookingDate: document.getElementById('f-booking-date').value,
-      checklist: {
-        format: el.bookingForm.querySelector('input[name="chk_format"]:checked').value === 'Yes',
-        bedVolume: el.bookingForm.querySelector('input[name="chk_bedVolume"]:checked').value === 'Yes',
-        orientation: el.bookingForm.querySelector('input[name="chk_orientation"]:checked').value === 'Yes',
-        slicer: el.bookingForm.querySelector('input[name="chk_slicer"]:checked').value === 'Yes',
-        bedClean: el.bookingForm.querySelector('input[name="chk_bedClean"]:checked').value === 'Yes'
-      },
-      printerAssigned: document.getElementById('f-printer').value,
-      filamentType: document.getElementById('f-filament-type').value,
-      filamentColor: document.getElementById('f-filament-color').value.trim() || 'Any',
-      purpose: document.getElementById('f-purpose').value.trim(),
-      signatureName: document.getElementById('f-sig-name').value.trim(),
-      signatureDate: document.getElementById('f-sig-date').value.trim(),
-      file: selectedFile
-    };
-
     el.btnSubmitBooking.disabled = true;
     el.btnSubmitBooking.textContent = 'Uploading & Submitting...';
 
+    let filePayload = null;
     try {
+      if (selectedFile && selectedFile.requiresResumable) {
+        if (!getGasUrl()) {
+          throw new Error('Files over 35 MB require Google Apps Script to be connected, or paste a Google Drive link below.');
+        }
+        el.btnSubmitBooking.textContent = 'Uploading large file... 0%';
+        const driveFileId = await uploadFileResumableToDrive(selectedFile.rawFile, (pct) => {
+          el.btnSubmitBooking.textContent = `Uploading large file... ${pct}%`;
+        });
+        filePayload = {
+          name: selectedFile.name,
+          size: selectedFile.size,
+          mimeType: selectedFile.mimeType,
+          driveFileId,
+          externalUrl: driveLink
+        };
+      } else if (selectedFile) {
+        filePayload = {
+          name: selectedFile.name,
+          size: selectedFile.size,
+          mimeType: selectedFile.mimeType,
+          base64: selectedFile.base64,
+          externalUrl: driveLink
+        };
+      } else {
+        filePayload = {
+          name: 'Google Drive Link',
+          size: 0,
+          mimeType: 'text/uri-list',
+          externalUrl: driveLink
+        };
+      }
+
+      el.btnSubmitBooking.textContent = 'Submitting Booking...';
+
+      const payload = {
+        student: currentStudent,
+        fullName: document.getElementById('f-full-name').value.trim(),
+        gradeSection: document.getElementById('f-grade-section').value.trim(),
+        phone: document.getElementById('f-phone').value.trim(),
+        bookingDate: document.getElementById('f-booking-date').value,
+        checklist: {
+          format: el.bookingForm.querySelector('input[name="chk_format"]:checked').value === 'Yes',
+          bedVolume: el.bookingForm.querySelector('input[name="chk_bedVolume"]:checked').value === 'Yes',
+          orientation: el.bookingForm.querySelector('input[name="chk_orientation"]:checked').value === 'Yes',
+          slicer: el.bookingForm.querySelector('input[name="chk_slicer"]:checked').value === 'Yes',
+          bedClean: el.bookingForm.querySelector('input[name="chk_bedClean"]:checked').value === 'Yes'
+        },
+        printerAssigned: document.getElementById('f-printer').value,
+        filamentType: document.getElementById('f-filament-type').value,
+        filamentColor: document.getElementById('f-filament-color').value.trim() || 'Any',
+        purpose: document.getElementById('f-purpose').value.trim(),
+        signatureName: document.getElementById('f-sig-name').value.trim(),
+        signatureDate: document.getElementById('f-sig-date').value.trim(),
+        file: filePayload
+      };
+
       const res = await apiCall('createBooking', payload);
       if (!res.ok) {
         if (String(res.error || '').toLowerCase().includes('authentication')) {
@@ -935,6 +1046,7 @@
         showToast('Booking Submitted', `Reference ${res.bookingId} uploaded successfully.`);
         el.bookingForm.reset();
         clearSelectedFile();
+        if (driveLinkEl) driveLinkEl.value = '';
         document.getElementById('f-full-name').value = currentStudent.fullName;
         document.getElementById('f-filament-color').value = 'Any';
         setFormDefaults();
