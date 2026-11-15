@@ -1532,6 +1532,26 @@ textarea.field-error,
   font-size: 13.5px;
   color: #1e3a8a;
 }
+.upload-policy-note {
+  margin-top: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: var(--radius-md);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  font-size: 13px;
+  line-height: 1.45;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.upload-policy-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #2563eb;
+}
 
 /* GCash Payment Boxes & One-Tap Copy Button */
 .gcash-inline-box {
