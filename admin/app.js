@@ -444,21 +444,8 @@
   function computeAdminEstimate() {
     const weight = parseFloat(document.getElementById('edit-weight')?.value) || 0;
     const tier = document.getElementById('admin-est-tier')?.value || 'student_pla';
-    const highDetail = document.getElementById('admin-est-detail')?.checked || false;
-    const rush = document.getElementById('admin-est-rush')?.checked || false;
-
-    const tierRates = {
-      student_pla: { rate: 1.0, min: 50 },
-      student_spec: { rate: 2.5, min: 50 },
-      regular_pla: { rate: 5.0, min: 150 },
-      regular_spec: { rate: 6.5, min: 150 },
-      b2b_pla: { rate: 4.0, min: 150 }
-    };
-    const cfg = tierRates[tier] || tierRates.student_pla;
-    const rate = cfg.rate + (highDetail ? 0.5 : 0);
-    let total = Math.max(cfg.min, weight * rate);
-    if (rush) total *= 1.3;
-    return Math.round(total);
+    const rate = tier === 'student_pla' ? 1.0 : 2.5;
+    return Math.round(Math.max(50, weight * rate));
   }
 
   function updateAdminEstimate() {
@@ -468,7 +455,7 @@
     previewEl.textContent = `₱${total.toLocaleString('en-PH')}`;
   }
 
-  ['edit-weight', 'admin-est-tier', 'admin-est-detail', 'admin-est-rush'].forEach((id) => {
+  ['edit-weight', 'admin-est-tier'].forEach((id) => {
     const node = document.getElementById(id);
     if (node) {
       node.addEventListener('input', updateAdminEstimate);

@@ -619,42 +619,31 @@
     if (!document.getElementById('f-filament-color').value.trim()) {
       document.getElementById('f-filament-color').value = 'Any';
     }
+    ['chk_format', 'chk_bedVolume', 'chk_orientation', 'chk_slicer', 'chk_bedClean'].forEach((name) => {
+      const yesRadio = el.bookingForm.querySelector(`input[name="${name}"][value="Yes"]`);
+      if (yesRadio) yesRadio.checked = true;
+    });
   }
 
   // --- Portal Navigation ---
   function switchPortalView(view) {
     const isBooking = view === 'booking';
-    const isEstimator = view === 'estimator';
-    const isHistory = view === 'history';
-
-    const navEstimator = document.getElementById('nav-estimator');
-    const viewEstimator = document.getElementById('view-estimator');
-
     el.navNewBooking.classList.toggle('active', isBooking);
-    if (navEstimator) navEstimator.classList.toggle('active', isEstimator);
-    el.navMyBookings.classList.toggle('active', isHistory);
-
+    el.navMyBookings.classList.toggle('active', !isBooking);
     el.viewBooking.classList.toggle('hidden', !isBooking);
-    if (viewEstimator) viewEstimator.classList.toggle('hidden', !isEstimator);
-    el.viewHistory.classList.toggle('hidden', !isHistory);
+    el.viewHistory.classList.toggle('hidden', isBooking);
 
     if (isBooking) {
       el.portalTitle.textContent = 'New Print Job Request';
       el.portalSubtitle.textContent = 'Complete all sections below and attach your STL or 3MF model.';
-    } else if (isEstimator) {
-      el.portalTitle.textContent = '3D Print Cost Estimator';
-      el.portalSubtitle.textContent = 'Upload an STL or configure your project for an instant estimate in Philippine Pesos (₱).';
-      if (typeof calculateEstimator === 'function') calculateEstimator();
     } else {
       el.portalTitle.textContent = 'My Bookings & Material Fees';
-      el.portalSubtitle.textContent = 'Check your admin-assessed print specs, job status, and amount to pay.';
+      el.portalSubtitle.textContent = 'Check your print specs, job status, and GCash payment details.';
       loadMyBookings();
     }
   }
 
   el.navNewBooking.addEventListener('click', () => switchPortalView('booking'));
-  const navEstBtn = document.getElementById('nav-estimator');
-  if (navEstBtn) navEstBtn.addEventListener('click', () => switchPortalView('estimator'));
   el.navMyBookings.addEventListener('click', () => switchPortalView('history'));
 
   // --- File Dropzone ---
@@ -746,33 +735,97 @@
     clearSelectedFile();
   });
 
-  function showBookingError(msg) {
-    showAlert(el.bookingAlert, msg, 'error');
-    el.bookingAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    showToast('Submission Notice', msg);
+  function clearFieldErrors() {
+    el.bookingForm.querySelectorAll('.field-error').forEach((node) => node.classList.remove('field-error'));
   }
+
+  function focusMissedField(targetEl, msg) {
+    clearFieldErrors();
+    showAlert(el.bookingAlert, msg, 'error');
+    if (targetEl) {
+      targetEl.classList.add('field-error');
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (typeof targetEl.focus === 'function') {
+        setTimeout(() => targetEl.focus({ preventScroll: true }), 250);
+      }
+    } else {
+      el.bookingAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    showToast('Missing Field', msg);
+  }
+
+  el.bookingForm.addEventListener('input', (e) => {
+    if (e.target && e.target.classList) e.target.classList.remove('field-error');
+  });
+  el.bookingForm.addEventListener('change', (e) => {
+    if (e.target && e.target.classList) e.target.classList.remove('field-error');
+  });
 
   // --- Booking Submission ---
   el.bookingForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     hideAlert(el.bookingAlert);
+    clearFieldErrors();
+
+    const gradeEl = document.getElementById('f-grade-section');
+    if (!gradeEl.value.trim()) {
+      focusMissedField(gradeEl, 'Please enter your Grade and Section.');
+      return;
+    }
+
+    const phoneEl = document.getElementById('f-phone');
+    if (!phoneEl.value.trim()) {
+      focusMissedField(phoneEl, 'Please enter your Contact Phone Number.');
+      return;
+    }
+
+    const dateEl = document.getElementById('f-booking-date');
+    if (!dateEl.value) {
+      focusMissedField(dateEl, 'Please select your Booking Date.');
+      return;
+    }
 
     if (!selectedFile) {
-      showBookingError('Please upload your .STL or .3MF file before submitting.');
+      focusMissedField(el.dropzone, 'Please upload your .STL or .3MF 3D model file.');
       return;
     }
 
     const chkNames = ['chk_format', 'chk_bedVolume', 'chk_orientation', 'chk_slicer', 'chk_bedClean'];
     for (const name of chkNames) {
       if (!el.bookingForm.querySelector(`input[name="${name}"]:checked`)) {
-        showBookingError('Please complete all 5 items in the Design & Model Pre-Check Checklist.');
+        const row = el.bookingForm.querySelector(`input[name="${name}"]`)?.closest('.checklist-row');
+        focusMissedField(row, 'Please answer all 5 items in the Design & Model Pre-Check Checklist.');
         return;
       }
     }
 
-    if (!el.bookingForm.checkValidity()) {
-      el.bookingForm.reportValidity();
-      showBookingError('Please fill in all required fields and check the Lab Rules agreement.');
+    const colorEl = document.getElementById('f-filament-color');
+    if (!colorEl.value.trim()) {
+      focusMissedField(colorEl, 'Please specify your preferred Filament Color (or type "Any").');
+      return;
+    }
+
+    const purposeEl = document.getElementById('f-purpose');
+    if (!purposeEl.value.trim()) {
+      focusMissedField(purposeEl, 'Please describe the Purpose of the 3D Printed Object.');
+      return;
+    }
+
+    const agreeEl = document.getElementById('f-agree-rules');
+    if (!agreeEl.checked) {
+      focusMissedField(agreeEl.closest('.agree-check') || agreeEl, 'Please check the box to agree to the 5 Lab Rules & Student Acknowledgment.');
+      return;
+    }
+
+    const sigNameEl = document.getElementById('f-sig-name');
+    if (!sigNameEl.value.trim()) {
+      focusMissedField(sigNameEl, 'Please type your Full Name in Digital Signature.');
+      return;
+    }
+
+    const sigDateEl = document.getElementById('f-sig-date');
+    if (!sigDateEl.value.trim()) {
+      focusMissedField(sigDateEl, 'Please enter the Signature Date.');
       return;
     }
 
@@ -809,7 +862,7 @@
           showAlert(el.authAlert, 'Your session was not found on the server. Please sign in or register again.');
           return;
         }
-        showBookingError(res.error || 'Submission failed.');
+        focusMissedField(null, res.error || 'Submission failed.');
       } else {
         el.successBookingId.textContent = res.bookingId;
         el.successModal.classList.remove('hidden');
@@ -822,7 +875,7 @@
         loadMyBookings();
       }
     } catch (err) {
-      showBookingError(err.message || 'Network error while submitting.');
+      focusMissedField(null, err.message || 'Network error while submitting.');
     } finally {
       el.btnSubmitBooking.disabled = false;
       el.btnSubmitBooking.textContent = 'Submit Booking & Upload STL';
@@ -897,6 +950,10 @@
         ? `<div class="bk-notes"><strong>Admin Note:</strong> ${escapeHtml(b.adminNotes)}</div>`
         : '';
 
+      const gcashHint = (hasPrice && b.paymentStatus !== 'Paid')
+        ? `<div class="bk-gcash-hint">GCash: <strong>09158589344</strong><br/>Philip Marion Martin</div>`
+        : '';
+
       return `
         <article class="booking-card">
           <div>
@@ -917,6 +974,7 @@
             <div class="bk-price-label">Amount to Pay</div>
             ${priceHtml}
             ${payBadge}
+            ${gcashHint}
           </div>
         </article>
       `;
@@ -961,12 +1019,8 @@
     switchPortalView('history');
   });
 
-  // --- Client-side STL Parser (Binary & ASCII) & Cost Estimators ---
+  // --- Client-side STL Parser (Binary & ASCII) & Integrated Print Cost ---
   let inlineParsedSTL = null;
-  let estUploadedSTL = null;
-  let estPendingFile = null;
-  let estCurrentTab = 'stl';
-  let estLastQuoteText = '';
 
   function parseSTLBuffer(buffer) {
     const view = new DataView(buffer);
@@ -1041,7 +1095,7 @@
     if (key === 'petg') return 1.27;
     if (key === 'abs') return 1.04;
     if (key === 'tpu') return 1.21;
-    return 1.24; // PLA / Silk
+    return 1.24; // PLA
   }
 
   function analyzeInlineSTLFile(file) {
@@ -1066,35 +1120,23 @@
     const filamentEl = document.getElementById('f-filament-type');
     const printerEl = document.getElementById('f-printer');
     const infillEl = document.getElementById('inline-stl-infill');
-    const qualityEl = document.getElementById('inline-stl-quality');
-    const supportEl = document.getElementById('inline-stl-support');
 
     const mat = filamentEl ? filamentEl.value.toLowerCase() : 'petg';
     const printer = printerEl ? printerEl.value : 'Bambulab A1';
     const infill = infillEl ? (parseFloat(infillEl.value) || 0.15) : 0.15;
-    const qual = qualityEl ? (parseFloat(qualityEl.value) || 0) : 0;
-    const addSupport = supportEl ? supportEl.checked : true;
 
     const density = getMaterialDensity(mat);
     const effectiveFill = Math.min(1.0, 0.22 + (infill * 0.78));
-    let estGrams = inlineParsedSTL.volumeCm3 * effectiveFill * density;
-    if (addSupport) estGrams *= 1.25;
-    estGrams = Math.max(1, Math.round(estGrams));
+    // 25% support & purge allowance is always included automatically
+    const gramsWithBuffer = Math.max(1, Math.round(inlineParsedSTL.volumeCm3 * effectiveFill * density * 1.25));
 
-    // Student rate: ₱1.00/g for PLA, ₱2.50/g for PETG/ABS/TPU/Other, ₱50 min order
-    const baseRate = (mat === 'pla') ? 1.0 : 2.5;
-    const rate = baseRate + qual;
-    const rawCost = estGrams * rate;
-    const estCost = Math.max(50, rawCost);
-    const minApplied = rawCost < 50;
+    // Student rate only: ₱1.00/g for PLA, ₱2.50/g for PETG/ABS/TPU/Other, ₱50 minimum
+    const rate = (mat === 'pla') ? 1.0 : 2.5;
+    const printCost = Math.max(50, gramsWithBuffer * rate);
 
     const d = inlineParsedSTL.dims;
-    document.getElementById('inline-stl-meta').textContent =
-      `${d.x} × ${d.y} × ${d.z} mm · Volume: ${inlineParsedSTL.volumeCm3.toFixed(1)} cm³`;
-    document.getElementById('inline-stl-price').textContent = fmtPeso(estCost);
-    document.getElementById('inline-stl-dp').textContent = `50% DP: ${fmtPeso(estCost * 0.5)}`;
-    document.getElementById('inline-stl-breakdown').textContent =
-      `Est. weight: ${estGrams} g (${mat.toUpperCase()} @ ₱${rate.toFixed(2)}/g${minApplied ? ', ₱50 min. order' : ''}). Final fee confirmed by Lab Admin after slicing.`;
+    document.getElementById('inline-stl-meta').textContent = `Dimensions: ${d.x} × ${d.y} × ${d.z} mm`;
+    document.getElementById('inline-stl-price').textContent = fmtPeso(printCost);
 
     const warnEl = document.getElementById('inline-stl-bed-warn');
     if (warnEl) {
@@ -1102,272 +1144,21 @@
       const oversized = d.x > limit || d.y > limit || d.z > limit;
       warnEl.classList.remove('hidden', 'ok');
       if (oversized) {
-        warnEl.textContent = `⚠ Model (${d.x}×${d.y}×${d.z} mm) exceeds ${printer} bed (${limit}×${limit}×${limit} mm) — may need scaling or splitting.`;
+        warnEl.textContent = `⚠ Model (${d.x}×${d.y}×${d.z} mm) exceeds ${printer} bed (${limit}×${limit}×${limit} mm).`;
       } else {
         warnEl.classList.add('ok');
-        warnEl.textContent = `✓ Fits within ${printer} build volume (${limit}×${limit}×${limit} mm).`;
+        warnEl.textContent = `✓ Fits within ${printer} bed (${limit}×${limit}×${limit} mm).`;
       }
     }
   }
 
-  ['inline-stl-infill', 'inline-stl-quality', 'inline-stl-support', 'f-filament-type', 'f-printer'].forEach((id) => {
+  ['inline-stl-infill', 'f-filament-type', 'f-printer'].forEach((id) => {
     const node = document.getElementById(id);
     if (node) node.addEventListener('change', updateInlineSTLEstimate);
   });
 
-  // --- Full Interactive Cost Estimator Tab ---
-  function syncEstRange(prefix, val) {
-    const num = Math.max(1, parseInt(val, 10) || 1);
-    const rangeEl = document.getElementById(prefix + '-range');
-    const numEl = document.getElementById(prefix);
-    if (rangeEl) rangeEl.value = Math.min(num, parseInt(rangeEl.max, 10) || 1000);
-    if (numEl) numEl.value = num;
-    calculateEstimator();
-  }
-
-  function recalcEstimatorFromSTL() {
-    if (!estUploadedSTL) return;
-    const mat = document.getElementById('est-stl-material').value;
-    const infill = parseFloat(document.getElementById('est-stl-infill').value) || 0.15;
-    const addSupport = document.getElementById('est-stl-support').checked;
-
-    const density = getMaterialDensity(mat);
-    const effectiveFill = Math.min(1.0, 0.22 + (infill * 0.78));
-    let estGrams = estUploadedSTL.volumeCm3 * effectiveFill * density;
-    if (addSupport) estGrams *= 1.25;
-    estGrams = Math.max(1, Math.round(estGrams));
-
-    document.getElementById('est-stl-weight-range').value = Math.min(estGrams, 1000);
-    document.getElementById('est-stl-weight').value = estGrams;
-
-    const d = estUploadedSTL.dims;
-    const oversized = d.x > 180 || d.y > 180 || d.z > 180;
-    const statsEl = document.getElementById('est-stl-stats');
-    statsEl.classList.add('visible');
-    statsEl.innerHTML =
-      `<strong>✓ Loaded:</strong> ${escapeHtml(estUploadedSTL.name)}<br>` +
-      `<strong>Dimensions:</strong> ${d.x} × ${d.y} × ${d.z} mm | <strong>Mesh Volume:</strong> ${estUploadedSTL.volumeCm3.toFixed(1)} cm³<br>` +
-      `<strong>Estimated Weight:</strong> ${estGrams} g ${addSupport ? '(includes +25% support buffer)' : '(no support buffer)'}` +
-      (oversized ? `<span class="warn-size">⚠ Exceeds 180×180×180 mm A1 mini bed — use Bambulab A1 (256mm) or scale.</span>` : '');
-  }
-
-  function calculateEstimator() {
-    const linesEl = document.getElementById('est-quote-lines');
-    if (!linesEl) return;
-
-    let lines = [];
-    let total = 0;
-
-    if (estCurrentTab === 'stl') {
-      const cust = document.getElementById('est-stl-customer').value;
-      const mat = document.getElementById('est-stl-material').value;
-      const weight = parseFloat(document.getElementById('est-stl-weight').value) || 0;
-      const qual = parseFloat(document.getElementById('est-stl-quality').value) || 0;
-      const rush = document.getElementById('est-stl-rush').checked;
-
-      let rate = 5.0;
-      if (cust === 'student') rate = (mat === 'pla') ? 1.0 : 2.5;
-      else if (cust === 'b2b') rate = (mat === 'pla') ? 4.0 : 5.5;
-      else rate = (mat === 'pla') ? 5.0 : 6.5;
-      rate += qual;
-
-      let printCost = weight * rate;
-      const minOrder = (cust === 'student') ? 50 : 150;
-      let minApplied = false;
-      if (printCost < minOrder) {
-        printCost = minOrder;
-        minApplied = true;
-      }
-
-      lines.push(['Mode', 'STL-Ready Print']);
-      lines.push(['Rate (' + mat.toUpperCase() + ')', fmtPeso(rate) + ' / g']);
-      lines.push(['Weight', weight + ' g']);
-      lines.push(['Print Subtotal' + (minApplied ? ' (Min. Order)' : ''), fmtPeso(printCost)]);
-
-      total = printCost;
-      if (rush) {
-        const rushFee = total * 0.30;
-        lines.push(['Rush Priority (+30%)', fmtPeso(rushFee)]);
-        total += rushFee;
-      }
-    } else if (estCurrentTab === 'nocad') {
-      const type = document.getElementById('est-nocad-type').value;
-      const cust = document.getElementById('est-nocad-customer').value;
-      const weight = parseFloat(document.getElementById('est-nocad-weight').value) || 0;
-      const mat = document.getElementById('est-nocad-material').value;
-
-      const cadMap = {
-        proto_simple: { name: 'Simple Prototype CAD', fee: 400 },
-        proto_mod: { name: 'Moderate Prototype CAD', fee: 1000 },
-        proto_comp: { name: 'Complex Prototype CAD', fee: 2500 },
-        part_simple: { name: 'Simple Part CAD', fee: 300 },
-        part_mech: { name: 'Precision Part CAD (+Test Fits)', fee: 800 },
-        sculpt_custom: { name: 'Custom 3D Sculpting', fee: 2200 }
-      };
-
-      let cadFee = cadMap[type].fee;
-      if (cust === 'student') cadFee *= 0.75;
-      const rate = (cust === 'student') ? (mat === 'pla' ? 1.0 : 2.5) : (mat === 'pla' ? 5.0 : 6.5);
-      const printCost = Math.max(weight * rate, cust === 'student' ? 50 : 150);
-
-      lines.push(['Service', cadMap[type].name]);
-      lines.push(['Design / CAD Fee' + (cust === 'student' ? ' (25% Stu Off)' : ''), fmtPeso(cadFee)]);
-      lines.push(['Print Cost (' + weight + 'g @ ₱' + rate.toFixed(2) + '/g)', fmtPeso(printCost)]);
-      total = cadFee + printCost;
-    } else {
-      const tier = document.getElementById('est-fig-tier').value;
-      const qty = parseInt(document.getElementById('est-fig-qty').value, 10) || 1;
-      const finish = parseFloat(document.getElementById('est-fig-finish').value) || 0;
-      const club = document.getElementById('est-fig-club').checked;
-
-      const figMap = {
-        giveaway: { name: 'Event Giveaway / Flexi', price: 140 },
-        chibi: { name: '10cm Chibi Figure', price: 390 },
-        display: { name: '15cm Display Figure', price: 850 },
-        bust: { name: '22cm Collector Bust', price: 1750 }
-      };
-
-      const unitBase = figMap[tier].price + finish;
-      let subtotal = unitBase * qty;
-      let bulkDisc = 0;
-      if (tier === 'giveaway' && qty >= 50) bulkDisc = 0.15;
-      else if (tier === 'giveaway' && qty >= 20) bulkDisc = 0.10;
-
-      lines.push(['Item', figMap[tier].name + ' × ' + qty]);
-      lines.push(['Unit Price' + (finish > 0 ? ' (Painted)' : ' (Unpainted)'), fmtPeso(unitBase)]);
-      if (bulkDisc > 0) {
-        const dAmt = subtotal * bulkDisc;
-        lines.push(['Bulk Discount (-' + (bulkDisc * 100) + '%)', '-' + fmtPeso(dAmt)]);
-        subtotal -= dAmt;
-      }
-      if (club) {
-        const cAmt = subtotal * 0.15;
-        lines.push(["Collector's Club (-15%)", '-' + fmtPeso(cAmt)]);
-        subtotal -= cAmt;
-      }
-      total = subtotal;
-    }
-
-    const dp = total * 0.5;
-    linesEl.innerHTML = lines.map(
-      ([k, v]) => `<div class="quote-line"><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`
-    ).join('');
-    document.getElementById('est-quote-total').textContent = fmtPeso(total);
-    document.getElementById('est-quote-dp').innerHTML = `50% GCash Downpayment to start: <strong>${fmtPeso(dp)}</strong>`;
-
-    estLastQuoteText = `Hi Rion Martin 3D Printing! Here is my estimate:\n` +
-      lines.map(([k, v]) => `• ${k}: ${v}`).join('\n') +
-      `\nEstimated Total: ${fmtPeso(total)} (50% DP: ${fmtPeso(dp)})`;
-  }
-
-  function handleEstimatorSTLFile(file) {
-    if (!file || !file.name.toLowerCase().endsWith('.stl')) {
-      showToast('Invalid File', 'Please upload a valid .stl file.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const parsed = parseSTLBuffer(ev.target.result);
-      if (!parsed || parsed.volumeCm3 <= 0) {
-        showToast('STL Parse Notice', 'Could not parse STL volume. Enter weight manually.');
-        return;
-      }
-      estPendingFile = file;
-      estUploadedSTL = { name: file.name, volumeCm3: parsed.volumeCm3, dims: parsed.dims };
-      recalcEstimatorFromSTL();
-      calculateEstimator();
-    };
-    reader.readAsArrayBuffer(file);
-  }
-
-  document.querySelectorAll('.est-tab-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      estCurrentTab = btn.dataset.estTab;
-      document.querySelectorAll('.est-tab-btn').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('.est-panel').forEach((p) => p.classList.add('hidden'));
-      const panel = document.getElementById('est-panel-' + estCurrentTab);
-      if (panel) panel.classList.remove('hidden');
-      calculateEstimator();
-    });
-  });
-
-  const estDrop = document.getElementById('est-stl-dropzone');
-  const estFileIn = document.getElementById('est-stl-input');
-  if (estDrop && estFileIn) {
-    estDrop.addEventListener('click', () => estFileIn.click());
-    estDrop.addEventListener('dragover', (e) => { e.preventDefault(); estDrop.classList.add('dragover'); });
-    estDrop.addEventListener('dragleave', () => estDrop.classList.remove('dragover'));
-    estDrop.addEventListener('drop', (e) => {
-      e.preventDefault();
-      estDrop.classList.remove('dragover');
-      if (e.dataTransfer.files.length) handleEstimatorSTLFile(e.dataTransfer.files[0]);
-    });
-    estFileIn.addEventListener('change', () => {
-      if (estFileIn.files.length) handleEstimatorSTLFile(estFileIn.files[0]);
-    });
-  }
-
-  ['est-stl-customer', 'est-stl-quality', 'est-stl-rush', 'est-nocad-type', 'est-nocad-customer', 'est-nocad-material', 'est-fig-tier', 'est-fig-finish', 'est-fig-club'].forEach((id) => {
-    const node = document.getElementById(id);
-    if (node) node.addEventListener('change', calculateEstimator);
-  });
-  ['est-stl-material', 'est-stl-infill', 'est-stl-support'].forEach((id) => {
-    const node = document.getElementById(id);
-    if (node) node.addEventListener('change', () => { recalcEstimatorFromSTL(); calculateEstimator(); });
-  });
-
-  const estWtRange = document.getElementById('est-stl-weight-range');
-  const estWtNum = document.getElementById('est-stl-weight');
-  if (estWtRange) estWtRange.addEventListener('input', (e) => syncEstRange('est-stl-weight', e.target.value));
-  if (estWtNum) estWtNum.addEventListener('input', (e) => syncEstRange('est-stl-weight', e.target.value));
-
-  const estNcRange = document.getElementById('est-nocad-weight-range');
-  const estNcNum = document.getElementById('est-nocad-weight');
-  if (estNcRange) estNcRange.addEventListener('input', (e) => syncEstRange('est-nocad-weight', e.target.value));
-  if (estNcNum) estNcNum.addEventListener('input', (e) => syncEstRange('est-nocad-weight', e.target.value));
-
-  const estQtyRange = document.getElementById('est-fig-qty-range');
-  const estQtyNum = document.getElementById('est-fig-qty');
-  if (estQtyRange) estQtyRange.addEventListener('input', (e) => syncEstRange('est-fig-qty', e.target.value));
-  if (estQtyNum) estQtyNum.addEventListener('input', (e) => syncEstRange('est-fig-qty', e.target.value));
-
-  const btnCopyQuote = document.getElementById('btn-copy-quote');
-  if (btnCopyQuote) {
-    btnCopyQuote.addEventListener('click', () => {
-      if (navigator.clipboard && estLastQuoteText) {
-        navigator.clipboard.writeText(estLastQuoteText).then(() => {
-          const fb = document.getElementById('est-copy-feedback');
-          if (fb) {
-            fb.textContent = '✓ Quote copied! Paste it in FB Messenger to Rion Martin.';
-            setTimeout(() => { fb.textContent = ''; }, 3500);
-          }
-        });
-      }
-    });
-  }
-
-  const btnUseInBooking = document.getElementById('btn-use-in-booking');
-  if (btnUseInBooking) {
-    btnUseInBooking.addEventListener('click', () => {
-      const mat = document.getElementById('est-stl-material').value;
-      const filamentSelect = document.getElementById('f-filament-type');
-      if (filamentSelect) {
-        if (mat === 'pla' || mat === 'silk') filamentSelect.value = 'PLA';
-        else if (mat === 'petg') filamentSelect.value = 'PETG';
-        else if (mat === 'abs') filamentSelect.value = 'ABS';
-      }
-      if (estPendingFile) {
-        handleFileSelection(estPendingFile);
-      }
-      switchPortalView('booking');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  }
-
   // --- Init ---
   updateConnectionUI();
-  calculateEstimator();
   const savedSession = localStorage.getItem(STORAGE_KEYS.SESSION);
   if (savedSession) {
     try {

@@ -228,24 +228,17 @@
 
           <div class="admin-est-box">
             <div class="admin-est-head">
-              <span>Quick Cost Estimator</span>
+              <span>Quick Cost Calculator</span>
               <strong id="admin-est-preview">₱50</strong>
             </div>
             <div class="field">
-              <label for="admin-est-tier">Pricing Tier</label>
+              <label for="admin-est-tier">Student Material Rate</label>
               <select id="admin-est-tier">
-                <option value="student_pla">Student — Bulk PLA (₱1.00/g, min ₱50)</option>
-                <option value="student_spec">Student — PETG/ABS/Silk (₱2.50/g, min ₱50)</option>
-                <option value="regular_pla">Regular — Standard PLA (₱5.00/g, min ₱150)</option>
-                <option value="regular_spec">Regular — PETG/ABS/Silk (₱6.50/g, min ₱150)</option>
-                <option value="b2b_pla">Pro / B2B — Bulk PLA (₱4.00/g, min ₱150)</option>
+                <option value="student_pla">PLA (₱1.00/g, min ₱50)</option>
+                <option value="student_spec">PETG / ABS / TPU / Specialty (₱2.50/g, min ₱50)</option>
               </select>
             </div>
-            <div class="admin-est-checks">
-              <label><input type="checkbox" id="admin-est-detail" /> 0.12mm (+₱0.50/g)</label>
-              <label><input type="checkbox" id="admin-est-rush" /> Rush (+30%)</label>
-            </div>
-            <button type="button" id="btn-apply-est-price" class="btn btn-secondary btn-sm btn-block">Apply Estimated Price to Amount &darr;</button>
+            <button type="button" id="btn-apply-est-price" class="btn btn-secondary btn-sm btn-block" style="margin-top:8px;">Apply Price to Amount &darr;</button>
           </div>
 
           <div class="field">

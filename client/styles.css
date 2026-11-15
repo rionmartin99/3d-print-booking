@@ -1551,3 +1551,155 @@ textarea:focus {
     padding: 8px 4px;
   }
 }
+
+/* MOBILE-FIRST OVERFLOW PREVENTION, GCASH PAYMENT BOX & FIELD ERROR HIGHLIGHT */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.container,
+.card,
+.form-section,
+.grid-2,
+.field,
+.checklist-row,
+.booking-card,
+.topbar-inner,
+.portal-header {
+  min-width: 0;
+  max-width: 100%;
+}
+
+input,
+select,
+textarea {
+  max-width: 100%;
+}
+
+.field-error,
+input.field-error,
+select.field-error,
+textarea.field-error,
+.dropzone.field-error,
+.checklist-row.field-error,
+.agree-check.field-error {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18) !important;
+  background-color: #fef2f2 !important;
+}
+
+.gcash-inline-box {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.3;
+}
+.gcash-inline-box .gcash-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1d4ed8;
+}
+.gcash-inline-box strong {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--navy);
+  font-family: var(--font-mono);
+}
+.gcash-inline-box span:last-child {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.gcash-modal-box {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  color: #1e3a8a;
+  font-size: 13.5px;
+}
+.gcash-modal-box strong {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1d4ed8;
+  margin-bottom: 2px;
+}
+
+.bk-gcash-hint {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 18px 14px 48px;
+  }
+  .auth-wrapper {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin-top: 8px;
+  }
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .portal-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .segmented-nav {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .seg-btn {
+    font-size: 13px;
+    padding: 9px 8px;
+    text-align: center;
+  }
+  .checklist-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .stl-inline-controls {
+    grid-template-columns: 1fr;
+  }
+  .stl-inline-price-box {
+    width: 100%;
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .booking-card {
+    grid-template-columns: 1fr;
+  }
+  .bk-price-box {
+    text-align: left;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding-left: 0;
+    padding-top: 12px;
+  }
+  .topbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
