@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>3D Printer Session Booking — Student Portal</title>
   <meta name="description" content="Digital 3D printer session booking, STL model upload, and print fee tracking for students." />
-  <meta name="theme-color" content="#0f766e" />
+  <meta name="theme-color" content="#0f172a" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -154,6 +154,7 @@
         </div>
         <div class="segmented-nav" role="tablist">
           <button type="button" class="seg-btn active" id="nav-new-booking" data-view="booking">New Booking</button>
+          <button type="button" class="seg-btn" id="nav-estimator" data-view="estimator">Cost Estimator</button>
           <button type="button" class="seg-btn" id="nav-my-bookings" data-view="history">
             My Bookings &amp; Fees <span class="count-badge hidden" id="bookings-count-badge">0</span>
           </button>
@@ -229,6 +230,44 @@
                 </div>
                 <button type="button" id="btn-remove-file" class="btn btn-ghost btn-sm">Remove</button>
               </div>
+            </div>
+
+            <div id="stl-inline-estimator" class="stl-inline-card hidden">
+              <div class="stl-inline-head">
+                <div>
+                  <span class="stl-inline-badge">Instant STL Analysis &amp; Cost Estimate</span>
+                  <div class="stl-inline-meta" id="inline-stl-meta">Dimensions: — · Volume: —</div>
+                </div>
+                <div class="stl-inline-price-box">
+                  <span class="stl-price-label">Est. Student Cost</span>
+                  <strong class="stl-price-val" id="inline-stl-price">₱0</strong>
+                  <span class="stl-dp-sub" id="inline-stl-dp">50% DP: ₱0</span>
+                </div>
+              </div>
+              <div id="inline-stl-bed-warn" class="stl-bed-warn hidden"></div>
+              <div class="stl-inline-controls">
+                <div class="field">
+                  <label for="inline-stl-infill">Infill Density</label>
+                  <select id="inline-stl-infill">
+                    <option value="0.15">15% Standard (Prototypes)</option>
+                    <option value="0.20">20% Strong Infill</option>
+                    <option value="0.50">50% Heavy Functional</option>
+                    <option value="1.00">100% Solid</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="inline-stl-quality">Layer Detail</label>
+                  <select id="inline-stl-quality">
+                    <option value="0">0.20mm Standard (Included)</option>
+                    <option value="0.5">0.12mm High Detail (+₱0.50/g)</option>
+                  </select>
+                </div>
+                <label class="toggle-chip">
+                  <input type="checkbox" id="inline-stl-support" checked />
+                  <span>+25% Support Buffer</span>
+                </label>
+              </div>
+              <p class="stl-inline-note" id="inline-stl-breakdown">Estimated weight: — g. Final billable weight &amp; fee are confirmed by Lab Admin after slicing.</p>
             </div>
           </div>
 
@@ -376,7 +415,177 @@
         </form>
       </div>
 
-      <!-- VIEW 2: MY BOOKINGS & PAYMENTS -->
+      <!-- VIEW 2: INTERACTIVE PRINT COST ESTIMATOR -->
+      <div id="view-estimator" class="view-panel hidden">
+        <div class="calc-wrapper">
+          <div class="card calc-card">
+            <div class="est-tabs" role="tablist">
+              <button type="button" class="est-tab-btn active" data-est-tab="stl">1. STL Ready</button>
+              <button type="button" class="est-tab-btn" data-est-tab="nocad">2. No STL (Design)</button>
+              <button type="button" class="est-tab-btn" data-est-tab="figurine">3. Figurines &amp; Toys</button>
+            </div>
+
+            <!-- TAB 1: STL READY -->
+            <div id="est-panel-stl" class="est-panel active">
+              <div class="stl-dropzone" id="est-stl-dropzone" tabindex="0" role="button">
+                <input type="file" id="est-stl-input" accept=".stl" class="hidden-file-input" />
+                <strong>📁 Upload or Drop Your .STL File Here</strong>
+                <p>Auto-calculates mesh volume, dimensions &amp; estimated weight (+25% support buffer) in your browser</p>
+              </div>
+              <div class="stl-stats" id="est-stl-stats"></div>
+
+              <div class="grid-2">
+                <div class="field">
+                  <label for="est-stl-customer">Customer Type</label>
+                  <select id="est-stl-customer">
+                    <option value="student">Student (Valid School ID — ₱1.00/g Bulk PLA)</option>
+                    <option value="regular">Regular Customer (₱5.00/g Standard PLA)</option>
+                    <option value="b2b">Pro / B2B Partner (₱4.00/g Bulk 500g+/mo)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="est-stl-material">Filament Material</label>
+                  <select id="est-stl-material">
+                    <option value="pla">Standard Bulk PLA (Eco Bio-Plastic)</option>
+                    <option value="silk">Silk / Matte / Specialty Color PLA</option>
+                    <option value="petg">PETG (Strong, Heat &amp; Water Resistant)</option>
+                    <option value="abs">ABS / Tough Functional Filament</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="est-stl-infill">Infill Density (STL Auto-Estimate)</label>
+                  <select id="est-stl-infill">
+                    <option value="0.15">15% Standard Infill (Prototypes &amp; Figurines)</option>
+                    <option value="0.20">20% Strong Infill</option>
+                    <option value="0.50">50% Heavy Functional Part</option>
+                    <option value="1.00">100% Solid</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="est-stl-quality">Print Quality / Layer Height</label>
+                  <select id="est-stl-quality">
+                    <option value="0">Standard Prototype (0.20mm) — Included</option>
+                    <option value="0.5">High Detail (0.12mm) — +₱0.50/g</option>
+                  </select>
+                </div>
+              </div>
+              <span class="field-hint">Note: ₱1.00/g student rate applies to Standard Bulk PLA. PETG/ABS/Silk for students is ₱2.50/g.</span>
+
+              <div class="field mt-16">
+                <label for="est-stl-weight">Estimated Print Weight (grams)</label>
+                <div class="range-row">
+                  <input type="range" id="est-stl-weight-range" min="10" max="1000" value="80" />
+                  <input type="number" id="est-stl-weight" min="1" max="5000" value="80" />
+                </div>
+                <span class="field-hint">Minimum order: ₱50 (Students) / ₱150 (Regular).</span>
+              </div>
+
+              <div class="est-toggles">
+                <label class="toggle-row">
+                  <input type="checkbox" id="est-stl-support" checked />
+                  <span><strong>+25% Support &amp; Purge Allowance</strong> — Covers tree supports &amp; brims</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="est-stl-rush" />
+                  <span><strong>Rush Priority (+30%)</strong> — Same-day / 24-hour queue jump</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- TAB 2: NO STL (DESIGN + PRINT) -->
+            <div id="est-panel-nocad" class="est-panel hidden">
+              <div class="field">
+                <label for="est-nocad-type">What Do You Need Designed?</label>
+                <select id="est-nocad-type">
+                  <option value="proto_simple">Project Prototype — Simple (Bracket, Basic Box, Nameplate)</option>
+                  <option value="proto_mod">Project Prototype — Moderate (Arduino/Sensor Case, Snap-Fit)</option>
+                  <option value="proto_comp">Project Prototype — Complex (Robotics Chassis, Archi Scale Model)</option>
+                  <option value="part_simple">Broken / Replacement Part — Simple (Washer, Knob, Flat Clip)</option>
+                  <option value="part_mech">Broken / Replacement Part — Precision Gear/Clip (+2 Test Fits)</option>
+                  <option value="sculpt_custom">Custom 3D Sculpture / Character Bust (From Scratch)</option>
+                </select>
+              </div>
+              <div class="grid-2 mt-16">
+                <div class="field">
+                  <label for="est-nocad-customer">Customer Type (25% Student CAD Off)</label>
+                  <select id="est-nocad-customer">
+                    <option value="student">Student (Valid School ID — 25% OFF CAD + ₱1/g PLA)</option>
+                    <option value="regular">Regular / Commercial Client (Standard CAD + ₱5/g)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="est-nocad-material">Material</label>
+                  <select id="est-nocad-material">
+                    <option value="pla">Standard PLA (Prototypes / Visual Models)</option>
+                    <option value="petg">PETG / ABS (Recommended for Replacement Parts)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field mt-16">
+                <label for="est-nocad-weight">Estimated Final Print Weight (grams)</label>
+                <div class="range-row">
+                  <input type="range" id="est-nocad-weight-range" min="15" max="800" value="100" />
+                  <input type="number" id="est-nocad-weight" min="5" max="3000" value="100" />
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 3: FIGURINES & GIVEAWAYS -->
+            <div id="est-panel-figurine" class="est-panel hidden">
+              <div class="field">
+                <label for="est-fig-tier">Select Figurine / Giveaway Size</label>
+                <select id="est-fig-tier">
+                  <option value="giveaway">Event Giveaways / Flexi Toys &amp; Keychains (₱140/pc)</option>
+                  <option value="chibi">10cm Chibi / Desk Miniature (₱390/pc)</option>
+                  <option value="display">15cm Standard Display Figurine (₱850/pc)</option>
+                  <option value="bust">22cm Collector Bust / Statue (₱1,750/pc)</option>
+                </select>
+                <span class="field-hint">Prices include commercial STL license recovery.</span>
+              </div>
+              <div class="grid-2 mt-16">
+                <div class="field">
+                  <label for="est-fig-qty">Quantity</label>
+                  <div class="range-row">
+                    <input type="range" id="est-fig-qty-range" min="1" max="100" value="1" />
+                    <input type="number" id="est-fig-qty" min="1" max="500" value="1" />
+                  </div>
+                  <span class="field-hint">Bulk Giveaway Discount: 20+ pcs (-10%), 50+ pcs (-15%).</span>
+                </div>
+                <div class="field">
+                  <label for="est-fig-finish">Finishing Option</label>
+                  <select id="est-fig-finish">
+                    <option value="0">Unpainted (Clean Support Removal) — Included</option>
+                    <option value="450">Primed &amp; Hand-Painted (+₱450/pc)</option>
+                  </select>
+                </div>
+              </div>
+              <label class="toggle-row mt-16">
+                <input type="checkbox" id="est-fig-club" />
+                <span><strong>Collector's Club Member (-15% OFF)</strong> — ₱299/mo membership</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- LIVE QUOTE SUMMARY -->
+          <div class="quote-card">
+            <h3>Estimated Quote Summary</h3>
+            <div id="est-quote-lines"></div>
+            <div class="quote-divider"></div>
+            <div class="quote-total">
+              <span>Estimated Total</span>
+              <span class="price" id="est-quote-total">₱80</span>
+            </div>
+            <div class="dp-note" id="est-quote-dp">
+              50% GCash Downpayment to start: <strong>₱40</strong>
+            </div>
+            <button type="button" id="btn-use-in-booking" class="btn btn-primary btn-block">Proceed to New Booking &rarr;</button>
+            <button type="button" id="btn-copy-quote" class="btn btn-dark-outline btn-block mt-8">📋 Copy Quote for FB Messenger</button>
+            <div class="copy-feedback" id="est-copy-feedback"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 3: MY BOOKINGS & PAYMENTS -->
       <div id="view-history" class="view-panel hidden">
         <div class="history-toolbar">
           <p class="muted">Track your submitted print jobs, admin review status, and amount due.</p>

@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>3D Printer Lab — Admin Console</title>
   <meta name="description" content="Lab admin console for downloading student STL files, managing 3D print queues, and setting material fees." />
-  <meta name="theme-color" content="#111827" />
+  <meta name="theme-color" content="#0f172a" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -224,6 +224,28 @@
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </select>
+          </div>
+
+          <div class="admin-est-box">
+            <div class="admin-est-head">
+              <span>Quick Cost Estimator</span>
+              <strong id="admin-est-preview">₱50</strong>
+            </div>
+            <div class="field">
+              <label for="admin-est-tier">Pricing Tier</label>
+              <select id="admin-est-tier">
+                <option value="student_pla">Student — Bulk PLA (₱1.00/g, min ₱50)</option>
+                <option value="student_spec">Student — PETG/ABS/Silk (₱2.50/g, min ₱50)</option>
+                <option value="regular_pla">Regular — Standard PLA (₱5.00/g, min ₱150)</option>
+                <option value="regular_spec">Regular — PETG/ABS/Silk (₱6.50/g, min ₱150)</option>
+                <option value="b2b_pla">Pro / B2B — Bulk PLA (₱4.00/g, min ₱150)</option>
+              </select>
+            </div>
+            <div class="admin-est-checks">
+              <label><input type="checkbox" id="admin-est-detail" /> 0.12mm (+₱0.50/g)</label>
+              <label><input type="checkbox" id="admin-est-rush" /> Rush (+30%)</label>
+            </div>
+            <button type="button" id="btn-apply-est-price" class="btn btn-secondary btn-sm btn-block">Apply Estimated Price to Amount &darr;</button>
           </div>
 
           <div class="field">
