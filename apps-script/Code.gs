@@ -119,6 +119,35 @@ function validateSingleName(name, label) {
   return { valid: true, value: trimmed };
 }
 
+function sanitizeCell(value) {
+  const str = String(value == null ? '' : value).trim();
+  if (/^[=+\-@\t\r]/.test(str)) {
+    return "'" + str;
+  }
+  return str;
+}
+
+function verifyStudent(studentId, firstName, lastName) {
+  const id = String(studentId || '').trim();
+  const fn = String(firstName || '').trim().toLowerCase();
+  const ln = String(lastName || '').trim().toLowerCase();
+  if (!id || !fn || !ln) {
+    return false;
+  }
+
+  const { studentsSheet } = ensureSheets();
+  const rows = studentsSheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    const rowId = String(rows[i][0] || '').trim();
+    const rowFirst = String(rows[i][1] || '').trim().toLowerCase();
+    const rowLast = String(rows[i][2] || '').trim().toLowerCase();
+    if (rowId === id && rowFirst === fn && rowLast === ln) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) ? e.parameter.action : 'ping';
@@ -167,6 +196,8 @@ function doPost(e) {
         return handleAdminGetBookings(data);
       case 'adminUpdateBooking':
         return handleAdminUpdateBooking(data);
+      case 'adminDownloadFile':
+        return handleAdminDownloadFile(data);
       default:
         return jsonResponse({ ok: false, error: 'Unknown action: ' + action });
     }
