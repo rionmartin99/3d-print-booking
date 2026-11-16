@@ -184,6 +184,14 @@
       return { ok: true, booking: target };
     }
 
+    if (action === 'adminDeleteBooking') {
+      const idx = bookings.findIndex(b => b.bookingId === payload.bookingId);
+      if (idx === -1) return { ok: false, error: 'Booking not found.' };
+      bookings.splice(idx, 1);
+      localStorage.setItem(STORAGE_KEYS.LOCAL_BOOKINGS, JSON.stringify(bookings));
+      return { ok: true, bookingId: payload.bookingId };
+    }
+
     return { ok: false, error: 'Unsupported action' };
   }
 
@@ -740,6 +748,38 @@
       btn.textContent = 'Save Pricing & Status';
     }
   });
+
+  const btnDeleteJob = document.getElementById('btn-delete-job');
+  if (btnDeleteJob) {
+    btnDeleteJob.addEventListener('click', async () => {
+      const bookingId = document.getElementById('edit-booking-id').value;
+      if (!bookingId) return;
+      const confirmed = window.confirm(
+        `Delete booking ${bookingId}? This removes the booking from the sheet and moves any uploaded file to Trash.`
+      );
+      if (!confirmed) return;
+
+      btnDeleteJob.disabled = true;
+      btnDeleteJob.textContent = 'Deleting...';
+      hideAlert(el.inspAlert);
+
+      try {
+        const res = await apiCall('adminDeleteBooking', { bookingId });
+        if (!res.ok) {
+          showAlert(el.inspAlert, res.error || 'Failed to delete booking.');
+        } else {
+          el.inspectorModal.classList.add('hidden');
+          showToast(`Booking ${bookingId} deleted.`, 'success');
+          await loadQueue();
+        }
+      } catch (err) {
+        showAlert(el.inspAlert, err.message || 'Network error.');
+      } finally {
+        btnDeleteJob.disabled = false;
+        btnDeleteJob.textContent = 'Delete Booking';
+      }
+    });
+  }
 
   // --- Settings Modal ---
   el.btnBackendSettings.addEventListener('click', () => {

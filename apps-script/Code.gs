@@ -200,6 +200,8 @@ function doPost(e) {
         return handleAdminUpdateBooking(data);
       case 'adminDownloadFile':
         return handleAdminDownloadFile(data);
+      case 'adminDeleteBooking':
+        return handleAdminDeleteBooking(data);
       default:
         return jsonResponse({ ok: false, error: 'Unknown action: ' + action });
     }
@@ -622,4 +624,35 @@ function handleAdminDownloadFile(data) {
     mimeType: file.getMimeType(),
     base64: Utilities.base64Encode(bytes)
   });
+}
+
+function handleAdminDeleteBooking(data) {
+  const passcode = String(data.passcode || '').trim();
+  if (passcode !== getAdminPasscode()) {
+    return jsonResponse({ ok: false, error: 'Unauthorized.' });
+  }
+
+  const bookingId = String(data.bookingId || '').trim();
+  if (!bookingId) {
+    return jsonResponse({ ok: false, error: 'Booking ID is required.' });
+  }
+
+  const { bookingsSheet } = ensureSheets();
+  const rows = bookingsSheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === bookingId) {
+      const driveFileId = String(rows[i][25] || '').trim();
+      if (driveFileId) {
+        try {
+          DriveApp.getFileById(driveFileId).setTrashed(true);
+        } catch (err) {
+          // Ignore if file was already deleted or inaccessible
+        }
+      }
+      bookingsSheet.deleteRow(i + 1);
+      return jsonResponse({ ok: true, bookingId: bookingId });
+    }
+  }
+
+  return jsonResponse({ ok: false, error: 'Booking not found.' });
 }

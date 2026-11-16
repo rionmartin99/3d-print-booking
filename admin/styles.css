@@ -981,6 +981,24 @@ a:focus-visible,
   font-family: var(--font-mono);
 }
 
+.inspector-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn-danger-outline {
+  background: #ffffff;
+  color: var(--danger, #dc2626);
+  border: 1px solid #fecaca;
+}
+
+.btn-danger-outline:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
 /* TOAST NOTIFICATIONS */
 .toast-container {
   position: fixed;
