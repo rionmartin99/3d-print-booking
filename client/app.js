@@ -11,11 +11,16 @@
     LOCAL_BOOKINGS: 'printlab_local_bookings'
   };
 
+  const SYNC_META_CACHE = 'printlab-sync-meta';
+  const SYNC_META_KEY = './__sync_state__.json';
+  const PERIODIC_SYNC_TAG = 'printlab-booking-sync';
+
   let currentStudent = null;
   let selectedFile = null;
   let deferredInstallPrompt = null;
   let swRegistration = null;
   let pollTimer = null;
+  let lastLoadedBookings = [];
 
   // DOM Elements
   const el = {
@@ -318,6 +323,7 @@
     updatePushButtonUI();
     if (perm === 'granted') {
       firePushNotification('Push Notifications Active', 'You will be notified when the admin updates your print specs or payment.');
+      syncPeriodicRegistration(lastLoadedBookings);
     }
   });
 
@@ -337,7 +343,95 @@
     saveNotifications(list);
   });
 
-  function checkForAdminUpdates(bookings) {
+  function hasActiveOrUnpaidJobs(bookings) {
+    return Array.isArray(bookings) && bookings.some((b) => {
+      const status = String(b.jobStatus || '');
+      const pay = String(b.paymentStatus || '');
+      const isFinishedStatus = status === 'Completed' || status === 'Cancelled' || status === 'Rejected';
+      return !isFinishedStatus || pay !== 'Paid';
+    });
+  }
+
+  async function readSyncMetaSnapshot() {
+    if (!('caches' in window)) return null;
+    try {
+      const cache = await caches.open(SYNC_META_CACHE);
+      const res = await cache.match(SYNC_META_KEY);
+      if (!res) return null;
+      const data = await res.json();
+      return data && data.snapshot ? data.snapshot : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function saveSyncMeta(snapshot) {
+    if (!('caches' in window) || !currentStudent) return;
+    const gasUrl = getGasUrl();
+    if (!gasUrl) return;
+    try {
+      const cache = await caches.open(SYNC_META_CACHE);
+      await cache.put(
+        SYNC_META_KEY,
+        new Response(
+          JSON.stringify({
+            gasUrl,
+            studentId: currentStudent.studentId,
+            snapshot,
+            updatedAt: Date.now()
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+    } catch {
+      // Ignore cache write errors
+    }
+  }
+
+  async function clearSyncMeta() {
+    if ('caches' in window) {
+      try {
+        await caches.delete(SYNC_META_CACHE);
+      } catch {
+        // Ignore
+      }
+    }
+    try {
+      const reg = swRegistration || (navigator.serviceWorker && await navigator.serviceWorker.ready);
+      if (reg && 'periodicSync' in reg) {
+        await reg.periodicSync.unregister(PERIODIC_SYNC_TAG);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  async function syncPeriodicRegistration(bookings) {
+    if (!currentStudent || !getGasUrl()) return;
+    try {
+      const reg = swRegistration || (navigator.serviceWorker && await navigator.serviceWorker.ready);
+      if (!reg || !('periodicSync' in reg)) return;
+
+      const shouldSync = hasActiveOrUnpaidJobs(bookings);
+      if (!shouldSync) {
+        await reg.periodicSync.unregister(PERIODIC_SYNC_TAG).catch(() => {});
+        return;
+      }
+
+      if (navigator.permissions && navigator.permissions.query) {
+        const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+        if (status.state !== 'granted') return;
+      }
+
+      await reg.periodicSync.register(PERIODIC_SYNC_TAG, {
+        minInterval: 15 * 60 * 1000
+      });
+    } catch {
+      // Periodic Background Sync not permitted or PWA not installed
+    }
+  }
+
+  async function checkForAdminUpdates(bookings) {
     const snapKey = getSnapshotKey();
     if (!snapKey) return;
 
@@ -346,6 +440,11 @@
       prevMap = JSON.parse(localStorage.getItem(snapKey) || '{}');
     } catch {
       prevMap = {};
+    }
+
+    const swSnapshot = await readSyncMetaSnapshot();
+    if (swSnapshot && typeof swSnapshot === 'object') {
+      prevMap = { ...prevMap, ...swSnapshot };
     }
 
     const nextMap = {};
@@ -408,6 +507,8 @@
     }
 
     localStorage.setItem(snapKey, JSON.stringify(nextMap));
+    await saveSyncMeta(nextMap);
+    await syncPeriodicRegistration(bookings);
   }
 
   // --- API Adapter ---
@@ -607,7 +708,9 @@
 
   function logout() {
     currentStudent = null;
+    lastLoadedBookings = [];
     if (pollTimer) clearInterval(pollTimer);
+    clearSyncMeta();
     localStorage.removeItem(STORAGE_KEYS.SESSION);
     el.portalSection.classList.add('hidden');
     el.userControls.classList.add('hidden');
@@ -1077,9 +1180,10 @@
         return;
       }
       const list = res.bookings || [];
+      lastLoadedBookings = list;
       el.bookingsCountBadge.textContent = list.length;
       el.bookingsCountBadge.classList.toggle('hidden', list.length === 0);
-      checkForAdminUpdates(list);
+      await checkForAdminUpdates(list);
       renderBookings(list);
     } catch (err) {
       console.error(err);

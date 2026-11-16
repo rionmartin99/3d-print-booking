@@ -999,6 +999,45 @@ a:focus-visible,
   border-color: #f87171;
 }
 
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: var(--radius-md);
+  color: #9f1239;
+  font-size: 13px;
+}
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.col-check {
+  width: 36px;
+  text-align: center;
+}
+.col-check input[type="checkbox"],
+.qc-select input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.qc-head-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.qc-select {
+  padding-top: 2px;
+}
+
 /* TOAST NOTIFICATIONS */
 .toast-container {
   position: fixed;

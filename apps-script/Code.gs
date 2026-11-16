@@ -202,6 +202,8 @@ function doPost(e) {
         return handleAdminDownloadFile(data);
       case 'adminDeleteBooking':
         return handleAdminDeleteBooking(data);
+      case 'adminBulkDeleteBookings':
+        return handleAdminBulkDeleteBookings(data);
       default:
         return jsonResponse({ ok: false, error: 'Unknown action: ' + action });
     }
@@ -655,4 +657,45 @@ function handleAdminDeleteBooking(data) {
   }
 
   return jsonResponse({ ok: false, error: 'Booking not found.' });
+}
+
+function handleAdminBulkDeleteBookings(data) {
+  const passcode = String(data.passcode || '').trim();
+  if (passcode !== getAdminPasscode()) {
+    return jsonResponse({ ok: false, error: 'Unauthorized.' });
+  }
+
+  const ids = Array.isArray(data.bookingIds)
+    ? data.bookingIds.map(function (id) { return String(id || '').trim(); }).filter(Boolean)
+    : [];
+  if (!ids.length) {
+    return jsonResponse({ ok: false, error: 'No booking IDs provided.' });
+  }
+
+  const idSet = {};
+  for (let k = 0; k < ids.length; k++) {
+    idSet[ids[k]] = true;
+  }
+
+  const { bookingsSheet } = ensureSheets();
+  const rows = bookingsSheet.getDataRange().getValues();
+  const deletedIds = [];
+
+  for (let i = rows.length - 1; i >= 1; i--) {
+    const rowId = String(rows[i][0] || '').trim();
+    if (idSet[rowId]) {
+      const driveFileId = String(rows[i][25] || '').trim();
+      if (driveFileId) {
+        try {
+          DriveApp.getFileById(driveFileId).setTrashed(true);
+        } catch (err) {
+          // Ignore if file was already deleted or inaccessible
+        }
+      }
+      bookingsSheet.deleteRow(i + 1);
+      deletedIds.push(rowId);
+    }
+  }
+
+  return jsonResponse({ ok: true, deletedCount: deletedIds.length, deletedIds: deletedIds });
 }

@@ -141,6 +141,16 @@
         </div>
       </div>
 
+      <!-- BULK ACTION BAR -->
+      <div id="bulk-action-bar" class="bulk-bar hidden" role="region" aria-label="Bulk actions">
+        <span class="bulk-count"><strong id="bulk-selected-count">0</strong> selected</span>
+        <div class="bulk-actions">
+          <button type="button" id="btn-bulk-select-all" class="btn btn-secondary btn-sm">Select All Visible</button>
+          <button type="button" id="btn-bulk-clear" class="btn btn-ghost btn-sm">Clear</button>
+          <button type="button" id="btn-bulk-delete" class="btn btn-danger-outline btn-sm">Delete Selected</button>
+        </div>
+      </div>
+
       <!-- QUEUE TABLE & MOBILE CARDS -->
       <div class="card table-card">
         <div id="queue-loading" class="queue-loading hidden" aria-live="polite" aria-busy="true">
@@ -152,6 +162,7 @@
           <table class="queue-table">
             <thead>
               <tr>
+                <th class="col-check"><input type="checkbox" id="select-all-bookings" aria-label="Select all visible bookings" /></th>
                 <th>Booking</th>
                 <th>Student</th>
                 <th>Model File</th>

@@ -14,6 +14,7 @@
   let deferredInstallPrompt = null;
   let allBookings = [];
   let activeBookingId = null;
+  const selectedBookingIds = new Set();
 
   const el = {
     connDot: document.getElementById('conn-dot'),
@@ -190,6 +191,14 @@
       bookings.splice(idx, 1);
       localStorage.setItem(STORAGE_KEYS.LOCAL_BOOKINGS, JSON.stringify(bookings));
       return { ok: true, bookingId: payload.bookingId };
+    }
+
+    if (action === 'adminBulkDeleteBookings') {
+      const idSet = new Set(Array.isArray(payload.bookingIds) ? payload.bookingIds : []);
+      const remaining = bookings.filter(b => !idSet.has(b.bookingId));
+      const deletedCount = bookings.length - remaining.length;
+      localStorage.setItem(STORAGE_KEYS.LOCAL_BOOKINGS, JSON.stringify(remaining));
+      return { ok: true, deletedCount };
     }
 
     return { ok: false, error: 'Unsupported action' };
@@ -393,12 +402,31 @@
     });
   }
 
+  function updateBulkBarUI(visibleRows) {
+    const bulkBar = document.getElementById('bulk-action-bar');
+    const countEl = document.getElementById('bulk-selected-count');
+    const selectAllCb = document.getElementById('select-all-bookings');
+    const validIds = new Set(allBookings.map(b => b.bookingId));
+    for (const id of Array.from(selectedBookingIds)) {
+      if (!validIds.has(id)) selectedBookingIds.delete(id);
+    }
+    if (countEl) countEl.textContent = String(selectedBookingIds.size);
+    if (bulkBar) bulkBar.classList.toggle('hidden', selectedBookingIds.size === 0);
+    if (selectAllCb) {
+      const rows = visibleRows || getFilteredBookings();
+      const allChecked = rows.length > 0 && rows.every(r => selectedBookingIds.has(r.bookingId));
+      selectAllCb.checked = allChecked;
+      selectAllCb.indeterminate = !allChecked && rows.some(r => selectedBookingIds.has(r.bookingId));
+    }
+  }
+
   function renderTable() {
     const rows = getFilteredBookings();
+    updateBulkBarUI(rows);
     if (!rows.length) {
       el.queueTbody.innerHTML = `
         <tr>
-          <td colspan="7" style="text-align:center; padding: 36px; color: var(--ink-muted);">
+          <td colspan="8" style="text-align:center; padding: 36px; color: var(--ink-muted);">
             No matching print bookings found.
           </td>
         </tr>
@@ -421,9 +449,13 @@
       const weightText = (b.estimatedWeightGrams === '' || b.estimatedWeightGrams == null)
         ? '—'
         : `${escapeHtml(b.estimatedWeightGrams)}g`;
+      const isChecked = selectedBookingIds.has(b.bookingId) ? ' checked' : '';
 
       return `
         <tr>
+          <td class="col-check">
+            <input type="checkbox" class="row-select-cb" data-id="${escapeHtml(b.bookingId)}" aria-label="Select booking ${escapeHtml(b.bookingId)}"${isChecked} />
+          </td>
           <td>
             <div class="cell-main mono">${escapeHtml(b.bookingId)}</div>
             <div class="cell-sub">${escapeHtml(b.bookingDate)}</div>
@@ -468,13 +500,19 @@
         const weightText = (b.estimatedWeightGrams === '' || b.estimatedWeightGrams == null)
           ? '—'
           : `${escapeHtml(b.estimatedWeightGrams)}g`;
+        const isChecked = selectedBookingIds.has(b.bookingId) ? ' checked' : '';
 
         return `
           <article class="queue-card">
             <div class="qc-head">
-              <div>
-                <div class="qc-id mono">${escapeHtml(b.bookingId)}</div>
-                <div class="qc-date">${escapeHtml(b.bookingDate)}</div>
+              <div class="qc-head-left">
+                <label class="qc-select">
+                  <input type="checkbox" class="card-select-cb" data-id="${escapeHtml(b.bookingId)}" aria-label="Select booking ${escapeHtml(b.bookingId)}"${isChecked} />
+                </label>
+                <div>
+                  <div class="qc-id mono">${escapeHtml(b.bookingId)}</div>
+                  <div class="qc-date">${escapeHtml(b.bookingDate)}</div>
+                </div>
               </div>
               <span class="badge ${statusBadgeClass(b.jobStatus)}">${escapeHtml(b.jobStatus)}</span>
             </div>
@@ -752,7 +790,7 @@
   const btnDeleteJob = document.getElementById('btn-delete-job');
   if (btnDeleteJob) {
     btnDeleteJob.addEventListener('click', async () => {
-      const bookingId = document.getElementById('edit-booking-id').value;
+      const bookingId = activeBookingId;
       if (!bookingId) return;
       const confirmed = window.confirm(
         `Delete booking ${bookingId}? This removes the booking from the sheet and moves any uploaded file to Trash.`
@@ -768,6 +806,7 @@
         if (!res.ok) {
           showAlert(el.inspAlert, res.error || 'Failed to delete booking.');
         } else {
+          selectedBookingIds.delete(bookingId);
           el.inspectorModal.classList.add('hidden');
           showToast(`Booking ${bookingId} deleted.`, 'success');
           await loadQueue();
@@ -777,6 +816,83 @@
       } finally {
         btnDeleteJob.disabled = false;
         btnDeleteJob.textContent = 'Delete Booking';
+      }
+    });
+  }
+
+  // --- Bulk Selection & Deletion ---
+  function handleSelectionChange(e) {
+    const cb = e.target.closest('.row-select-cb, .card-select-cb');
+    if (!cb) return;
+    const id = cb.dataset.id;
+    if (!id) return;
+    if (cb.checked) selectedBookingIds.add(id);
+    else selectedBookingIds.delete(id);
+    // Sync matching checkbox between desktop table and mobile cards
+    document.querySelectorAll(`.row-select-cb[data-id="${CSS.escape(id)}"], .card-select-cb[data-id="${CSS.escape(id)}"]`).forEach(elCb => {
+      elCb.checked = cb.checked;
+    });
+    updateBulkBarUI();
+  }
+
+  el.queueTbody.addEventListener('change', handleSelectionChange);
+  if (el.queueCards) el.queueCards.addEventListener('change', handleSelectionChange);
+
+  const selectAllCb = document.getElementById('select-all-bookings');
+  if (selectAllCb) {
+    selectAllCb.addEventListener('change', () => {
+      const rows = getFilteredBookings();
+      rows.forEach(r => {
+        if (selectAllCb.checked) selectedBookingIds.add(r.bookingId);
+        else selectedBookingIds.delete(r.bookingId);
+      });
+      renderTable();
+    });
+  }
+
+  const btnBulkSelectAll = document.getElementById('btn-bulk-select-all');
+  if (btnBulkSelectAll) {
+    btnBulkSelectAll.addEventListener('click', () => {
+      getFilteredBookings().forEach(r => selectedBookingIds.add(r.bookingId));
+      renderTable();
+    });
+  }
+
+  const btnBulkClear = document.getElementById('btn-bulk-clear');
+  if (btnBulkClear) {
+    btnBulkClear.addEventListener('click', () => {
+      selectedBookingIds.clear();
+      renderTable();
+    });
+  }
+
+  const btnBulkDelete = document.getElementById('btn-bulk-delete');
+  if (btnBulkDelete) {
+    btnBulkDelete.addEventListener('click', async () => {
+      const ids = Array.from(selectedBookingIds);
+      if (!ids.length) return;
+      const confirmed = window.confirm(
+        `Delete ${ids.length} selected booking(s)? This removes them from the sheet and moves any uploaded files to Trash.`
+      );
+      if (!confirmed) return;
+
+      btnBulkDelete.disabled = true;
+      btnBulkDelete.textContent = `Deleting ${ids.length}...`;
+
+      try {
+        const res = await apiCall('adminBulkDeleteBookings', { bookingIds: ids });
+        if (!res.ok) {
+          showToast(res.error || 'Bulk deletion failed.', 'error');
+        } else {
+          selectedBookingIds.clear();
+          showToast(`Deleted ${res.deletedCount ?? ids.length} booking(s).`, 'success');
+          await loadQueue();
+        }
+      } catch (err) {
+        showToast(err.message || 'Network error during bulk deletion.', 'error');
+      } finally {
+        btnBulkDelete.disabled = false;
+        btnBulkDelete.textContent = 'Delete Selected';
       }
     });
   }
