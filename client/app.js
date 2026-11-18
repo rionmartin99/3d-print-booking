@@ -1006,6 +1006,12 @@
     hideAlert(el.bookingAlert);
     clearFieldErrors();
 
+    const banCheck = computeUnpaidSummary(lastLoadedBookings);
+    if (banCheck.isBanned) {
+      focusMissedField(null, `Booking restricted until ${new Date(banCheck.banEndMs).toLocaleDateString()} due to an unpaid balance of ${formatCurrency(banCheck.totalUnpaid)} past the 3-day deadline.`);
+      return;
+    }
+
     const gradeEl = document.getElementById('f-grade-section');
     if (!gradeEl.value.trim()) {
       focusMissedField(gradeEl, 'Please enter your Grade and Section.');
@@ -1184,6 +1190,7 @@
       el.bookingsCountBadge.textContent = list.length;
       el.bookingsCountBadge.classList.toggle('hidden', list.length === 0);
       await checkForAdminUpdates(list);
+      renderUnpaidSummary(list);
       renderBookings(list);
     } catch (err) {
       console.error(err);
@@ -1197,8 +1204,161 @@
     if (s.includes('printing')) return 'badge-printing';
     if (s.includes('ready')) return 'badge-ready';
     if (s.includes('completed')) return 'badge-completed';
+    if (s.includes('cancel')) return 'badge-cancelled';
     if (s.includes('rejected')) return 'badge-rejected';
     return 'badge-pending';
+  }
+
+  function formatDurationRemaining(ms) {
+    if (ms <= 0) return '0h';
+    const totalHours = Math.ceil(ms / (1000 * 60 * 60));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    if (days > 0) return `${days}d ${hours}h`;
+    return `${hours}h`;
+  }
+
+  function computeUnpaidSummary(bookings) {
+    const list = Array.isArray(bookings) ? bookings : [];
+    const unpaidJobs = list.filter((b) => {
+      const status = String(b.jobStatus || '');
+      const isCancelledOrRejected = status === 'Cancelled' || status === 'Rejected';
+      const hasPrice = b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay) && Number(b.priceToPay) > 0;
+      return !isCancelledOrRejected && b.paymentStatus !== 'Paid' && hasPrice;
+    });
+
+    const totalUnpaid = unpaidJobs.reduce((sum, b) => sum + Number(b.priceToPay), 0);
+    if (totalUnpaid <= 0 || !unpaidJobs.length) {
+      return {
+        totalUnpaid: 0,
+        unpaidCount: 0,
+        lastJobMs: 0,
+        deadlineMs: 0,
+        banEndMs: 0,
+        isOverdue: false,
+        isBanned: false
+      };
+    }
+
+    const lastJobMs = Math.max(
+      ...unpaidJobs.map((b) => {
+        const ts = Date.parse(b.updatedAt || b.createdAt || b.bookingDate || '');
+        return isNaN(ts) ? 0 : ts;
+      })
+    );
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const deadlineMs = lastJobMs > 0 ? lastJobMs + THREE_DAYS_MS : 0;
+    const banEndMs = deadlineMs > 0 ? deadlineMs + SEVEN_DAYS_MS : 0;
+    const now = Date.now();
+    const isOverdue = deadlineMs > 0 && now >= deadlineMs;
+    const isBanned = isOverdue && now < banEndMs;
+
+    return {
+      totalUnpaid,
+      unpaidCount: unpaidJobs.length,
+      lastJobMs,
+      deadlineMs,
+      banEndMs,
+      isOverdue,
+      isBanned
+    };
+  }
+
+  function renderUnpaidSummary(bookings) {
+    const card = document.getElementById('unpaid-balance-card');
+    const banBanner = document.getElementById('booking-ban-banner');
+    const summary = computeUnpaidSummary(bookings);
+
+    if (banBanner) {
+      if (summary.isBanned) {
+        const banUntilStr = new Date(summary.banEndMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        const rem = formatDurationRemaining(summary.banEndMs - Date.now());
+        banBanner.innerHTML = `<strong>7-Day Booking Ban Active:</strong> You have an unpaid balance of <strong>${formatCurrency(summary.totalUnpaid)}</strong> past the 3-day payment deadline. You cannot submit a new booking until <strong>${escapeHtml(banUntilStr)}</strong> (${rem} remaining).`;
+        banBanner.classList.remove('hidden');
+      } else {
+        banBanner.classList.add('hidden');
+      }
+    }
+
+    if (el.btnSubmitBooking) {
+      el.btnSubmitBooking.disabled = summary.isBanned;
+      if (summary.isBanned) {
+        el.btnSubmitBooking.textContent = 'Booking Restricted (Unpaid Balance)';
+      } else if (el.btnSubmitBooking.textContent === 'Booking Restricted (Unpaid Balance)') {
+        el.btnSubmitBooking.textContent = 'Submit Booking & Upload STL';
+      }
+    }
+
+    if (!card) return;
+    if (!bookings || !bookings.length) {
+      card.classList.add('hidden');
+      return;
+    }
+
+    card.classList.remove('hidden', 'is-clear', 'is-warning', 'is-banned');
+
+    if (summary.totalUnpaid <= 0) {
+      card.classList.add('is-clear');
+      card.innerHTML = `
+        <div class="ub-top">
+          <div>
+            <div class="ub-label">Total Unpaid Balance</div>
+            <div class="ub-amount">${formatCurrency(0)}</div>
+          </div>
+          <span class="ub-pill">All Caught Up</span>
+        </div>
+        <div class="ub-meta">You have no unpaid balance. You are eligible to submit new 3D print bookings anytime.</div>
+      `;
+      return;
+    }
+
+    const now = Date.now();
+    const deadlineStr = summary.deadlineMs
+      ? new Date(summary.deadlineMs).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : '—';
+
+    if (summary.isBanned) {
+      const banEndStr = new Date(summary.banEndMs).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+      const banRem = formatDurationRemaining(summary.banEndMs - now);
+      card.classList.add('is-banned');
+      card.innerHTML = `
+        <div class="ub-top">
+          <div>
+            <div class="ub-label">Total Unpaid Balance (${summary.unpaidCount} job${summary.unpaidCount > 1 ? 's' : ''})</div>
+            <div class="ub-amount">${formatCurrency(summary.totalUnpaid)}</div>
+          </div>
+          <span class="ub-pill">7-Day Ban Active · ${banRem} left</span>
+        </div>
+        <div class="ub-meta">
+          Your 3-day payment deadline (<strong>${escapeHtml(deadlineStr)}</strong>) has passed. New bookings are disabled until <strong>${escapeHtml(banEndStr)}</strong>. Please settle your balance via GCash so the Admin can mark your jobs as Paid.
+        </div>
+        <div class="bk-gcash-hint">
+          <div>GCash: <strong>09158589344</strong><br/>Philip Marion Martin</div>
+          <button type="button" class="btn-copy-gcash" data-gcash="09158589344">Copy GCash</button>
+        </div>
+      `;
+      return;
+    }
+
+    const rem = summary.deadlineMs ? formatDurationRemaining(summary.deadlineMs - now) : '3 days';
+    card.classList.add('is-warning');
+    card.innerHTML = `
+      <div class="ub-top">
+        <div>
+          <div class="ub-label">Total Unpaid Balance (${summary.unpaidCount} job${summary.unpaidCount > 1 ? 's' : ''})</div>
+          <div class="ub-amount">${formatCurrency(summary.totalUnpaid)}</div>
+        </div>
+        <span class="ub-pill">${summary.isOverdue ? 'Past Deadline' : `Due in ${rem}`}</span>
+      </div>
+      <div class="ub-meta">
+        Please pay within <strong>3 days</strong> of your last print job (by <strong>${escapeHtml(deadlineStr)}</strong>) to avoid a <strong>7-day booking ban</strong>.
+      </div>
+      <div class="bk-gcash-hint">
+        <div>GCash: <strong>09158589344</strong><br/>Philip Marion Martin</div>
+        <button type="button" class="btn-copy-gcash" data-gcash="09158589344">Copy GCash</button>
+      </div>
+    `;
   }
 
   function renderBookings(bookings) {

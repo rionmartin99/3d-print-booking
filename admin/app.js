@@ -325,8 +325,9 @@
       { label: 'Approved', type: 'status', value: 'Approved', count: allBookings.filter(b => b.jobStatus === 'Approved').length },
       { label: 'Printing', type: 'status', value: 'Printing', count: allBookings.filter(b => b.jobStatus === 'Printing').length },
       { label: 'Ready for Pickup', type: 'status', value: 'Ready for Pickup', count: allBookings.filter(b => b.jobStatus === 'Ready for Pickup').length },
-      { label: 'Unpaid', type: 'payment', value: 'Unpaid', count: allBookings.filter(b => b.paymentStatus !== 'Paid').length },
-      { label: 'Completed', type: 'status', value: 'Completed', count: allBookings.filter(b => b.jobStatus === 'Completed').length }
+      { label: 'Unpaid', type: 'payment', value: 'Unpaid', count: allBookings.filter(b => b.paymentStatus !== 'Paid' && b.jobStatus !== 'Cancelled' && b.jobStatus !== 'Rejected').length },
+      { label: 'Completed', type: 'status', value: 'Completed', count: allBookings.filter(b => b.jobStatus === 'Completed').length },
+      { label: 'Cancelled', type: 'status', value: 'Cancelled', count: allBookings.filter(b => b.jobStatus === 'Cancelled').length }
     ];
 
     el.statusChips.innerHTML = chips.map(chip => {
@@ -382,6 +383,7 @@
     if (s.includes('printing')) return 'badge-printing';
     if (s.includes('ready')) return 'badge-ready';
     if (s.includes('completed')) return 'badge-completed';
+    if (s.includes('cancel')) return 'badge-cancelled';
     if (s.includes('rejected')) return 'badge-rejected';
     return 'badge-pending';
   }
@@ -1006,6 +1008,96 @@
   }
 
   showInstallBannerIfFirstTime();
+
+  function exportBookingsPDF() {
+    const rows = getFilteredBookings();
+    if (!rows.length) {
+      showToast('No bookings to export.', 'error');
+      return;
+    }
+
+    const totalCount = rows.length;
+    const completedCount = rows.filter(b => b.jobStatus === 'Completed').length;
+    const cancelledCount = rows.filter(b => b.jobStatus === 'Cancelled').length;
+    const paidSum = rows
+      .filter(b => b.paymentStatus === 'Paid' && b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay))
+      .reduce((acc, b) => acc + Number(b.priceToPay), 0);
+    const unpaidSum = rows
+      .filter(b => b.paymentStatus !== 'Paid' && b.jobStatus !== 'Cancelled' && b.jobStatus !== 'Rejected' && b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay))
+      .reduce((acc, b) => acc + Number(b.priceToPay), 0);
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+
+    if (window.jspdf && typeof window.jspdf.jsPDF === 'function') {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+
+      doc.setFontSize(16);
+      doc.setTextColor(15, 23, 42);
+      doc.text('3D Print Lab — Booking Summary Report', 40, 42);
+
+      doc.setFontSize(9.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Generated: ${new Date().toLocaleString()}   |   Bookings: ${totalCount}   |   Completed: ${completedCount}   |   Cancelled: ${cancelledCount}   |   Paid: PHP ${paidSum.toFixed(2)}   |   Unpaid: PHP ${unpaidSum.toFixed(2)}`, 40, 60);
+
+      const tableRows = rows.map(b => {
+        const hasPrice = b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay);
+        const priceText = hasPrice ? `PHP ${Number(b.priceToPay).toFixed(2)}` : 'Not Set';
+        const weightText = (b.estimatedWeightGrams === '' || b.estimatedWeightGrams == null) ? '—' : `${b.estimatedWeightGrams}g`;
+        return [
+          b.bookingId,
+          String(b.bookingDate || '').slice(0, 10),
+          `${b.fullName}\n${b.gradeSection || '—'} · ${b.phone || '—'}`,
+          `${b.fileName}\n(${formatBytes(b.fileSizeBytes)})`,
+          `${b.printerAssigned}\n${b.filamentType} (${b.filamentColor}) · ${weightText}`,
+          b.jobStatus,
+          `${priceText}\n${b.paymentStatus}`
+        ];
+      });
+
+      if (typeof doc.autoTable === 'function') {
+        doc.autoTable({
+          startY: 74,
+          head: [['Booking ID', 'Date', 'Student', 'Model File', 'Specs', 'Job Status', 'Amount & Payment']],
+          body: tableRows,
+          styles: { fontSize: 8.5, cellPadding: 5, valign: 'middle', overflow: 'linebreak' },
+          headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+          margin: { left: 40, right: 40 }
+        });
+      }
+
+      doc.save(`3d-print-bookings-${dateStr}.pdf`);
+      showToast(`Downloaded PDF summary (${totalCount} bookings).`, 'success');
+      return;
+    }
+
+    const win = window.open('', '_blank');
+    if (!win) {
+      showToast('Unable to open PDF print preview (popup blocked).', 'error');
+      return;
+    }
+    const htmlRows = rows.map(b => {
+      const hasPrice = b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay);
+      const priceText = hasPrice ? `₱ ${Number(b.priceToPay).toFixed(2)}` : 'Not Set';
+      return `<tr>
+        <td>${escapeHtml(b.bookingId)}</td>
+        <td>${escapeHtml(String(b.bookingDate || '').slice(0, 10))}</td>
+        <td>${escapeHtml(b.fullName)} (${escapeHtml(b.gradeSection || '—')})</td>
+        <td>${escapeHtml(b.fileName)}</td>
+        <td>${escapeHtml(b.printerAssigned)} · ${escapeHtml(b.filamentType)}</td>
+        <td>${escapeHtml(b.jobStatus)}</td>
+        <td>${priceText} (${escapeHtml(b.paymentStatus)})</td>
+      </tr>`;
+    }).join('');
+    win.document.write(`<!DOCTYPE html><html><head><title>Booking Summary</title><style>body{font-family:sans-serif;padding:24px;font-size:12px;}h1{margin:0 0 6px;font-size:18px;}p{margin:0 0 16px;color:#475569;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;}th{background:#0f172a;color:#fff;}</style></head><body><h1>3D Print Lab — Booking Summary</h1><p>Generated: ${escapeHtml(new Date().toLocaleString())} | Bookings: ${totalCount} | Paid: ₱ ${paidSum.toFixed(2)} | Unpaid: ₱ ${unpaidSum.toFixed(2)}</p><table><thead><tr><th>Booking ID</th><th>Date</th><th>Student</th><th>Model File</th><th>Specs</th><th>Status</th><th>Payment</th></tr></thead><tbody>${htmlRows}</tbody></table><script>window.onload=function(){window.print();};</script></body></html>`);
+    win.document.close();
+  }
+
+  const btnExportPdf = document.getElementById('btn-export-pdf');
+  if (btnExportPdf) {
+    btnExportPdf.addEventListener('click', exportBookingsPDF);
+  }
 
   // --- Init ---
   updateConnectionUI();

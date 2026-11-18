@@ -360,6 +360,34 @@ function handleCreateBooking(data) {
     return jsonResponse({ ok: false, error: 'Student authentication failed.' });
   }
 
+  // Enforce 3-day payment deadline + 7-day booking ban
+  const { bookingsSheet } = ensureSheets();
+  const existingRows = bookingsSheet.getDataRange().getValues();
+  const unpaidTimestamps = [];
+  for (let i = 1; i < existingRows.length; i++) {
+    const row = existingRows[i];
+    if (String(row[2]) !== String(student.studentId)) continue;
+    const jobStatus = String(row[28] || '');
+    const payStatus = String(row[30] || '');
+    const price = Number(row[29] || 0);
+    if (jobStatus !== 'Cancelled' && jobStatus !== 'Rejected' && payStatus !== 'Paid' && price > 0) {
+      const ts = new Date(row[32] || row[1] || row[8]).getTime();
+      if (!isNaN(ts) && ts > 0) unpaidTimestamps.push(ts);
+    }
+  }
+  if (unpaidTimestamps.length > 0) {
+    const lastJobMs = Math.max.apply(null, unpaidTimestamps);
+    const deadlineMs = lastJobMs + 3 * 24 * 60 * 60 * 1000;
+    const banEndMs = deadlineMs + 7 * 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    if (nowMs >= deadlineMs && nowMs < banEndMs) {
+      return jsonResponse({
+        ok: false,
+        error: 'Booking restricted: You have an unpaid balance past the 3-day deadline. You are banned from booking until ' + new Date(banEndMs).toDateString() + '.'
+      });
+    }
+  }
+
   const fileData = data.file || {};
   const externalUrl = String(fileData.externalUrl || '').trim();
   const existingDriveId = String(fileData.driveFileId || '').trim();
@@ -410,7 +438,6 @@ function handleCreateBooking(data) {
     recordedFileSize = recordedFileSize || driveFile.getSize();
   }
 
-  const { bookingsSheet } = ensureSheets();
   const checklist = data.checklist || {};
 
   bookingsSheet.appendRow([

@@ -1577,6 +1577,82 @@ textarea.field-error,
   margin-bottom: 0;
 }
 
+.badge-cancelled {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+/* Total Unpaid Balance & Deadline Card */
+.unpaid-balance-card {
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg, 14px);
+  border: 1px solid var(--border);
+  background: var(--surface, #ffffff);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.unpaid-balance-card.is-clear {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.unpaid-balance-card.is-warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.unpaid-balance-card.is-banned {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.ub-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ub-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-secondary);
+}
+.ub-amount {
+  font-size: 26px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--ink);
+  line-height: 1.15;
+}
+.unpaid-balance-card.is-clear .ub-amount { color: #15803d; }
+.unpaid-balance-card.is-warning .ub-amount { color: #b45309; }
+.unpaid-balance-card.is-banned .ub-amount { color: #b91c1c; }
+.ub-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.unpaid-balance-card.is-clear .ub-pill { background: #dcfce7; color: #166534; }
+.unpaid-balance-card.is-warning .ub-pill { background: #fef3c7; color: #92400e; }
+.unpaid-balance-card.is-banned .ub-pill { background: #fee2e2; color: #991b1b; }
+.ub-meta {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+}
+.ub-meta strong {
+  color: var(--ink);
+}
+
 /* GCash Payment Boxes & One-Tap Copy Button */
 .gcash-inline-box {
   background: #eff6ff;

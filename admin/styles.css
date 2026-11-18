@@ -1049,6 +1049,18 @@ a:focus-visible,
   padding-top: 2px;
 }
 
+.workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.badge-cancelled {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
 /* TOAST NOTIFICATIONS */
 .toast-container {
   position: fixed;

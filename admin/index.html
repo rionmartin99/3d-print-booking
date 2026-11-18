@@ -92,7 +92,10 @@
           <h1>Print Job Queue</h1>
           <p>Download submitted <code>.STL</code> / <code>.3MF</code> files for slicing and assign fees for students.</p>
         </div>
-        <button type="button" id="btn-refresh-queue" class="btn btn-secondary">Refresh Queue</button>
+        <div class="workspace-actions">
+          <button type="button" id="btn-export-pdf" class="btn btn-secondary">Download PDF Summary</button>
+          <button type="button" id="btn-refresh-queue" class="btn btn-secondary">Refresh Queue</button>
+        </div>
       </div>
 
       <!-- SUMMARY METRICS -->
@@ -131,6 +134,7 @@
             <option value="Printing">Printing</option>
             <option value="Ready for Pickup">Ready for Pickup</option>
             <option value="Completed">Completed</option>
+            <option value="Cancelled">Cancelled</option>
             <option value="Rejected">Rejected</option>
           </select>
           <select id="filter-payment" aria-label="Filter by payment status">
@@ -305,6 +309,7 @@
               <option value="Printing">Printing</option>
               <option value="Ready for Pickup">Ready for Pickup</option>
               <option value="Completed">Completed</option>
+              <option value="Cancelled">Cancelled</option>
               <option value="Rejected">Rejected</option>
             </select>
           </div>
@@ -355,6 +360,8 @@
 
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+  <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

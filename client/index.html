@@ -177,6 +177,7 @@
 
       <!-- VIEW 1: DIGITAL BOOKING FORM -->
       <div id="view-booking" class="view-panel">
+        <div id="booking-ban-banner" class="alert alert-error hidden" role="alert"></div>
         <div id="booking-alert" class="alert hidden" role="alert"></div>
 
         <nav class="step-progress" id="step-progress" aria-label="Booking form sections">
@@ -483,6 +484,8 @@
           <p class="muted">Track your submitted print jobs, admin review status, and amount due.</p>
           <button type="button" id="btn-refresh-bookings" class="btn btn-secondary btn-sm">Refresh Status</button>
         </div>
+
+        <div id="unpaid-balance-card" class="unpaid-balance-card hidden" role="region" aria-label="Total Unpaid Balance"></div>
 
         <div id="bookings-list" class="bookings-list">
           <!-- Rendered by JS -->

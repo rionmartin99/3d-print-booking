@@ -1,4 +1,4 @@
-const CACHE_NAME = 'printlab-client-v12';
+const CACHE_NAME = 'printlab-client-v13';
 const SYNC_META_CACHE = 'printlab-sync-meta';
 const SYNC_META_KEY = './__sync_state__.json';
 const PERIODIC_SYNC_TAG = 'printlab-booking-sync';
