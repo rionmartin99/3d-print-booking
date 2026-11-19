@@ -1009,89 +1009,172 @@
 
   showInstallBannerIfFirstTime();
 
-  function exportBookingsPDF() {
-    const rows = getFilteredBookings();
-    if (!rows.length) {
-      showToast('No bookings to export.', 'error');
-      return;
+  function pdfEscape(str) {
+    return String(str || '')
+      .replace(/[^\x20-\x7E]/g, ' ')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)');
+  }
+
+  function downloadBuiltInPDF(rows, summaryText, filename) {
+    const pageWidth = 842;
+    const pageHeight = 595;
+    const marginX = 36;
+    const lineHeight = 14;
+    const maxLinesPerPage = 32;
+
+    const lines = [
+      { text: '3D Print Lab - Booking Summary Report', bold: true, size: 14 },
+      { text: summaryText, bold: false, size: 9 },
+      { text: '------------------------------------------------------------------------------------------------------------------------------------', bold: false, size: 8 },
+      { text: 'ID          | Date       | Student              | Model File               | Status           | Amount / Payment', bold: true, size: 8.5 },
+      { text: '------------------------------------------------------------------------------------------------------------------------------------', bold: false, size: 8 }
+    ];
+
+    rows.forEach((b) => {
+      const id = String(b.bookingId || '').slice(0, 11).padEnd(11, ' ');
+      const dt = String(b.bookingDate || '').slice(0, 10).padEnd(10, ' ');
+      const stu = String(b.fullName || '').slice(0, 20).padEnd(20, ' ');
+      const file = String(b.fileName || '').slice(0, 24).padEnd(24, ' ');
+      const st = String(b.jobStatus || '').slice(0, 16).padEnd(16, ' ');
+      const hasPrice = b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay);
+      const amt = hasPrice ? `PHP ${Number(b.priceToPay).toFixed(2)}` : 'Not Set';
+      const pay = `${amt} (${b.paymentStatus || 'Unpaid'})`;
+      lines.push({ text: `${id} | ${dt} | ${stu} | ${file} | ${st} | ${pay}`, bold: false, size: 8 });
+    });
+
+    const pages = [];
+    for (let i = 0; i < lines.length; i += maxLinesPerPage) {
+      pages.push(lines.slice(i, i + maxLinesPerPage));
     }
 
-    const totalCount = rows.length;
-    const completedCount = rows.filter(b => b.jobStatus === 'Completed').length;
-    const cancelledCount = rows.filter(b => b.jobStatus === 'Cancelled').length;
-    const paidSum = rows
-      .filter(b => b.paymentStatus === 'Paid' && b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay))
-      .reduce((acc, b) => acc + Number(b.priceToPay), 0);
-    const unpaidSum = rows
-      .filter(b => b.paymentStatus !== 'Paid' && b.jobStatus !== 'Cancelled' && b.jobStatus !== 'Rejected' && b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay))
-      .reduce((acc, b) => acc + Number(b.priceToPay), 0);
+    const objects = [];
+    const addObj = (body) => {
+      objects.push(body);
+      return objects.length;
+    };
 
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const fontRegularId = addObj('<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>');
+    const fontBoldId = addObj('<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>');
+    const pagesId = addObj(''); // placeholder
+    const pageIds = [];
 
-    if (window.jspdf && typeof window.jspdf.jsPDF === 'function') {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-
-      doc.setFontSize(16);
-      doc.setTextColor(15, 23, 42);
-      doc.text('3D Print Lab — Booking Summary Report', 40, 42);
-
-      doc.setFontSize(9.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Generated: ${new Date().toLocaleString()}   |   Bookings: ${totalCount}   |   Completed: ${completedCount}   |   Cancelled: ${cancelledCount}   |   Paid: PHP ${paidSum.toFixed(2)}   |   Unpaid: PHP ${unpaidSum.toFixed(2)}`, 40, 60);
-
-      const tableRows = rows.map(b => {
-        const hasPrice = b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay);
-        const priceText = hasPrice ? `PHP ${Number(b.priceToPay).toFixed(2)}` : 'Not Set';
-        const weightText = (b.estimatedWeightGrams === '' || b.estimatedWeightGrams == null) ? '—' : `${b.estimatedWeightGrams}g`;
-        return [
-          b.bookingId,
-          String(b.bookingDate || '').slice(0, 10),
-          `${b.fullName}\n${b.gradeSection || '—'} · ${b.phone || '—'}`,
-          `${b.fileName}\n(${formatBytes(b.fileSizeBytes)})`,
-          `${b.printerAssigned}\n${b.filamentType} (${b.filamentColor}) · ${weightText}`,
-          b.jobStatus,
-          `${priceText}\n${b.paymentStatus}`
-        ];
+    pages.forEach((pageLines) => {
+      let stream = 'BT\n';
+      let y = pageHeight - 42;
+      pageLines.forEach((ln) => {
+        const fontRef = ln.bold ? '/F2' : '/F1';
+        stream += `${fontRef} ${ln.size} Tf\n1 0 0 1 ${marginX} ${y} Tm\n(${pdfEscape(ln.text)}) Tj\n`;
+        y -= lineHeight;
       });
+      stream += 'ET\n';
+      const contentId = addObj(`<< /Length ${stream.length} >>\nstream\n${stream}endstream`);
+      const pageId = addObj(
+        `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >> >> /Contents ${contentId} 0 R >>`
+      );
+      pageIds.push(pageId);
+    });
 
-      if (typeof doc.autoTable === 'function') {
-        doc.autoTable({
-          startY: 74,
-          head: [['Booking ID', 'Date', 'Student', 'Model File', 'Specs', 'Job Status', 'Amount & Payment']],
-          body: tableRows,
-          styles: { fontSize: 8.5, cellPadding: 5, valign: 'middle', overflow: 'linebreak' },
-          headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
-          alternateRowStyles: { fillColor: [248, 250, 252] },
-          margin: { left: 40, right: 40 }
-        });
+    objects[pagesId - 1] = `<< /Type /Pages /Kids [${pageIds.map(id => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+    const catalogId = addObj(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+
+    let pdf = '%PDF-1.4\n';
+    const offsets = [0];
+    for (let i = 0; i < objects.length; i++) {
+      offsets.push(pdf.length);
+      pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+    }
+    const xrefOffset = pdf.length;
+    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    for (let i = 1; i <= objects.length; i++) {
+      pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+    }
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+    const blob = new Blob([pdf], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  function exportBookingsPDF() {
+    try {
+      const rows = getFilteredBookings();
+      if (!rows.length) {
+        showToast('No bookings to export.', 'error');
+        return;
       }
 
-      doc.save(`3d-print-bookings-${dateStr}.pdf`);
-      showToast(`Downloaded PDF summary (${totalCount} bookings).`, 'success');
-      return;
-    }
+      const totalCount = rows.length;
+      const completedCount = rows.filter(b => b.jobStatus === 'Completed').length;
+      const cancelledCount = rows.filter(b => b.jobStatus === 'Cancelled').length;
+      const paidSum = rows
+        .filter(b => b.paymentStatus === 'Paid' && b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay))
+        .reduce((acc, b) => acc + Number(b.priceToPay), 0);
+      const unpaidSum = rows
+        .filter(b => b.paymentStatus !== 'Paid' && b.jobStatus !== 'Cancelled' && b.jobStatus !== 'Rejected' && b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay))
+        .reduce((acc, b) => acc + Number(b.priceToPay), 0);
 
-    const win = window.open('', '_blank');
-    if (!win) {
-      showToast('Unable to open PDF print preview (popup blocked).', 'error');
-      return;
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const filename = `3d-print-bookings-${dateStr}.pdf`;
+      const summaryText = `Generated: ${new Date().toLocaleString()} | Bookings: ${totalCount} | Completed: ${completedCount} | Cancelled: ${cancelledCount} | Paid: PHP ${paidSum.toFixed(2)} | Unpaid: PHP ${unpaidSum.toFixed(2)}`;
+
+      if (window.jspdf && typeof window.jspdf.jsPDF === 'function') {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+
+        doc.setFontSize(16);
+        doc.setTextColor(15, 23, 42);
+        doc.text('3D Print Lab - Booking Summary Report', 40, 42);
+
+        doc.setFontSize(9.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(summaryText, 40, 60);
+
+        const tableRows = rows.map(b => {
+          const hasPrice = b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay);
+          const priceText = hasPrice ? `PHP ${Number(b.priceToPay).toFixed(2)}` : 'Not Set';
+          const weightText = (b.estimatedWeightGrams === '' || b.estimatedWeightGrams == null) ? '-' : `${b.estimatedWeightGrams}g`;
+          return [
+            String(b.bookingId || ''),
+            String(b.bookingDate || '').slice(0, 10),
+            `${b.fullName || ''}\n${b.gradeSection || '-'} | ${b.phone || '-'}`,
+            `${b.fileName || ''}\n(${formatBytes(b.fileSizeBytes)})`,
+            `${b.printerAssigned || ''}\n${b.filamentType || ''} (${b.filamentColor || ''}) | ${weightText}`,
+            String(b.jobStatus || ''),
+            `${priceText}\n${b.paymentStatus || 'Unpaid'}`
+          ];
+        });
+
+        if (typeof doc.autoTable === 'function') {
+          doc.autoTable({
+            startY: 74,
+            head: [['Booking ID', 'Date', 'Student', 'Model File', 'Specs', 'Job Status', 'Amount & Payment']],
+            body: tableRows,
+            styles: { fontSize: 8.5, cellPadding: 5, valign: 'middle', overflow: 'linebreak' },
+            headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [248, 250, 252] },
+            margin: { left: 40, right: 40 }
+          });
+          doc.save(filename);
+          showToast(`Downloaded PDF summary (${totalCount} bookings).`, 'success');
+          return;
+        }
+      }
+
+      // Guaranteed zero-dependency PDF download fallback
+      downloadBuiltInPDF(rows, summaryText, filename);
+      showToast(`Downloaded PDF summary (${totalCount} bookings).`, 'success');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      showToast(err.message || 'Failed to generate PDF.', 'error');
     }
-    const htmlRows = rows.map(b => {
-      const hasPrice = b.priceToPay !== null && b.priceToPay !== '' && !isNaN(b.priceToPay);
-      const priceText = hasPrice ? `₱ ${Number(b.priceToPay).toFixed(2)}` : 'Not Set';
-      return `<tr>
-        <td>${escapeHtml(b.bookingId)}</td>
-        <td>${escapeHtml(String(b.bookingDate || '').slice(0, 10))}</td>
-        <td>${escapeHtml(b.fullName)} (${escapeHtml(b.gradeSection || '—')})</td>
-        <td>${escapeHtml(b.fileName)}</td>
-        <td>${escapeHtml(b.printerAssigned)} · ${escapeHtml(b.filamentType)}</td>
-        <td>${escapeHtml(b.jobStatus)}</td>
-        <td>${priceText} (${escapeHtml(b.paymentStatus)})</td>
-      </tr>`;
-    }).join('');
-    win.document.write(`<!DOCTYPE html><html><head><title>Booking Summary</title><style>body{font-family:sans-serif;padding:24px;font-size:12px;}h1{margin:0 0 6px;font-size:18px;}p{margin:0 0 16px;color:#475569;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;}th{background:#0f172a;color:#fff;}</style></head><body><h1>3D Print Lab — Booking Summary</h1><p>Generated: ${escapeHtml(new Date().toLocaleString())} | Bookings: ${totalCount} | Paid: ₱ ${paidSum.toFixed(2)} | Unpaid: ₱ ${unpaidSum.toFixed(2)}</p><table><thead><tr><th>Booking ID</th><th>Date</th><th>Student</th><th>Model File</th><th>Specs</th><th>Status</th><th>Payment</th></tr></thead><tbody>${htmlRows}</tbody></table><script>window.onload=function(){window.print();};</script></body></html>`);
-    win.document.close();
   }
 
   const btnExportPdf = document.getElementById('btn-export-pdf');
