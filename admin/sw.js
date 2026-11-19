@@ -1,4 +1,4 @@
-const CACHE_NAME = 'printlab-admin-v14';
+const CACHE_NAME = 'printlab-admin-v15';
 const ASSETS = [
   './',
   './index.html',

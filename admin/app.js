@@ -900,10 +900,12 @@
   }
 
   // --- Settings Modal ---
-  el.btnBackendSettings.addEventListener('click', () => {
-    el.inputGasUrl.value = getGasUrl();
-    el.settingsModal.classList.remove('hidden');
-  });
+  if (el.btnBackendSettings) {
+    el.btnBackendSettings.addEventListener('click', () => {
+      el.inputGasUrl.value = getGasUrl();
+      el.settingsModal.classList.remove('hidden');
+    });
+  }
 
   el.btnCloseSettings.addEventListener('click', closeSettings);
   el.settingsModal.addEventListener('click', (e) => {
